@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#f5f4ee" />
+    <meta name="description" content="A local-first deadline workbench. Compare source statements, make uncertainty visible, and plan with a buffer." />
+    <title>Cutoff — a clearer deadline</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="./app.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">Skip to workspace</a>
+    <div id="app"></div>
+    <div id="dialog-root"></div>
+    <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    <noscript><main class="noscript"><h1>Cutoff needs JavaScript.</h1><p>All deadline calculations and storage run in your browser. Enable JavaScript to use the workbench.</p></main></noscript>
+  </body>
+</html>

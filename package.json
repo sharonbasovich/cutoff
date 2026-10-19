@@ -1,0 +1,25 @@
+{
+  "name": "cutoff-deadline-resolver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first deadline comparison without silently guessing time zones.",
+  "scripts": {
+    "test": "node --test tests/*model.test.js tests/interface-review.test.js",
+    "test:ui": "node tests/ui.test.js",
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/serve.mjs",
+    "check": "npm test && npm run build && npm run test:ui"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "0.5.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.11",
+    "@axe-core/playwright": "4.10.2",
+    "playwright": "1.56.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
