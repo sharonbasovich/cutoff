@@ -1,0 +1,14 @@
+Cutoff static demo
+Source commit: 61b71d0490475118c88a6f0f59e13ac97128d5f7
+Built from the reviewed source with npm ci and npm run build.
+All eight build outputs independently matched the desktop build.
+
+SHA-256
+d5d879e2e0f491907d6d29309912320660fb97b9dfb21c53ad790640099db3a1  app.css
+109c9b89b8d10693e9a19c2900b757a31364e63d9949592f6eab43f090defc06  app.css.map
+ac1b3910eea94ccb4508a9c13123d00a9cbd8369137ab2701dcfa025824d9134  app.js
+8743a2e1f52eecbf4f6dfaec8ff23caab228f51331ad16d3c4d1164c5407e88b  app.js.map
+c0916576e317abfb728dc4eb6a12d74b96e7822995b09fe9b2c77d713bbdc05f  favicon.svg
+b6fff09623b65fe07972d00baedceaedcaba45cef3fbd3d8c3723558de5ddce6  index.html
+cbde67c81f263d4f7513b588b2076a54064d8591970e11e31427cafb134130f7  LICENSE.txt
+be5d244efce7de0c6fb9fdefd306bb84e91f573bdccc6bf479e795a494982097  THIRD_PARTY_NOTICES.txt
