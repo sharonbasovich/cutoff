@@ -154,6 +154,21 @@ function openDialog(html, initialFocus) {
     }
   });
   dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close(); } });
+  dialog.addEventListener('keydown', event => {
+    if (event.key !== 'Tab' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || !dialog.open) return;
+    // Keep the app's tab cycle inside the modal; leave native interior controls alone.
+    const tabbable = [...dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]')].filter(element =>
+      element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[hidden], [inert]') &&
+      element.getClientRects().length > 0 && getComputedStyle(element).visibility === 'visible');
+    const first = tabbable[0], last = tabbable.at(-1), active = document.activeElement;
+    if (!first) {
+      event.preventDefault();
+      dialog.focus();
+    } else if ((!event.shiftKey && active === last) || (event.shiftKey && active === first) || active === dialog || !dialog.contains(active)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+  });
   dialog.showModal();
   (initialFocus ? dialog.querySelector(initialFocus) : dialog.querySelector('input,button'))?.focus();
   return dialog;

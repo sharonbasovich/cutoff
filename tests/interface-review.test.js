@@ -260,3 +260,126 @@ test('interface: planning separator alone is decorative and inherits readable te
     assert.equal(zone, `${parts.weekday} <span aria-hidden="true">·</span> ${data.case.localZone}`);
   }
 });
+
+// These explicit DOM/event stubs exercise the app's real dialog handlers in Node.
+// They do not simulate native browser focus order, date/time internals or Escape.
+function dialogEventHarness() {
+  const h = harness();
+  const doc = h.sandbox.document;
+  const root = h.nodes.get('#dialog-root');
+  doc.body = { id: 'body' };
+  const opener = { id: 'opener', isConnected: true, focus() { doc.activeElement = this; } };
+  const fallback = { id: 'add-source', isConnected: true, focus() { doc.activeElement = this; } };
+  h.nodes.set('#add-source', fallback);
+  doc.activeElement = opener;
+  h.sandbox.getComputedStyle = node => ({ visibility: node.visibility || 'visible' });
+  let current;
+  root.querySelector = () => current;
+  root.contains = dialog => dialog === current && dialog.isConnected;
+  const makeControl = (id, options = {}) => ({
+    id, tabIndex: 0, isConnected: true, visibility: 'visible', ...options,
+    matches(selector) { assert.equal(selector, ':disabled'); return !!this.disabled; },
+    closest(selector) { assert.equal(selector, '[hidden], [inert]'); return this.hiddenAncestor || this.inert ? {} : null; },
+    getClientRects() { return this.noLayout ? [] : [{}]; },
+    focus() { doc.activeElement = this; },
+  });
+  const open = (controls, initial = controls[0]) => {
+    const listeners = new Map();
+    current = {
+      open: false, isConnected: true, controls,
+      addEventListener(type, handler) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(handler); },
+      querySelectorAll() { return this.controls; },
+      querySelector(selector) { return this.controls.find(node => `#${node.id}` === selector) || this.controls[0]; },
+      contains(node) { return node === this || this.controls.includes(node); },
+      showModal() { this.open = true; },
+      focus() { doc.activeElement = this; },
+      remove() { this.isConnected = false; this.controls.forEach(node => { node.isConnected = false; }); },
+      close() { this.open = false; doc.activeElement = doc.body; this.dispatch('close', {}); },
+      dispatch(type, event) { for (const listener of listeners.get(type) || []) listener(event); },
+    };
+    h.evaluate(`openDialog('Synthetic dialog fixture', ${JSON.stringify(initial ? `#${initial.id}` : null)})`);
+    return current;
+  };
+  const press = (dialog, active, options = {}) => {
+    doc.activeElement = active;
+    const event = { key: 'Tab', shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, defaultPrevented: false, ...options,
+      preventDefault() { this.defaultPrevented = true; } };
+    dialog.dispatch('keydown', event);
+    return event;
+  };
+  return { h, doc, opener, fallback, makeControl, open, press };
+}
+
+test('interface: dialog Tab and Shift+Tab wrap only at the active boundary', () => {
+  const h = dialogEventHarness();
+  const first = h.makeControl('close'), middle = h.makeControl('source-date'), last = h.makeControl('submit');
+  const dialog = h.open([first, middle, last], middle);
+  assert.equal(h.doc.activeElement, middle, 'Explicit initial focus is retained');
+  assert.equal(h.press(dialog, last).defaultPrevented, true);
+  assert.equal(h.doc.activeElement, first);
+  assert.equal(h.press(dialog, first, { shiftKey: true }).defaultPrevented, true);
+  assert.equal(h.doc.activeElement, last);
+  for (const options of [{}, { shiftKey: true }]) {
+    assert.equal(h.press(dialog, middle, options).defaultPrevented, false, 'Interior native date/time traversal is untouched');
+    assert.equal(h.doc.activeElement, middle);
+  }
+});
+
+test('interface: dialog boundary recalculates enabled visible tabbables after changes', () => {
+  const h = dialogEventHarness();
+  const excluded = [h.makeControl('disabled-fieldset-child', { disabled: true }), h.makeControl('negative', { tabIndex: -1 }),
+    h.makeControl('hidden', { hiddenAncestor: true }), h.makeControl('inert', { inert: true }),
+    h.makeControl('no-layout', { noLayout: true }), h.makeControl('invisible', { visibility: 'hidden' })];
+  const first = h.makeControl('close'), last = h.makeControl('submit');
+  const dialog = h.open([...excluded, first, last, ...excluded]);
+  assert.equal(h.press(dialog, last).defaultPrevented, true);
+  assert.equal(h.doc.activeElement, first);
+  last.disabled = true;
+  assert.equal(h.press(dialog, first).defaultPrevented, true, 'A single remaining control wraps to itself');
+  assert.equal(h.doc.activeElement, first);
+  const newer = h.makeControl('newly-enabled'); dialog.controls.push(newer);
+  assert.equal(h.press(dialog, first, { shiftKey: true }).defaultPrevented, true);
+  assert.equal(h.doc.activeElement, newer);
+});
+
+test('interface: dialog key handling preserves Escape, browser shortcuts and handled events', () => {
+  const h = dialogEventHarness();
+  const first = h.makeControl('close'), last = h.makeControl('submit');
+  const dialog = h.open([first, last]);
+  for (const options of [{ key: 'Escape' }, { key: 'Enter' }, { ctrlKey: true }, { altKey: true }, { metaKey: true }]) {
+    assert.equal(h.press(dialog, last, options).defaultPrevented, false);
+    assert.equal(h.doc.activeElement, last);
+  }
+  h.press(dialog, last, { defaultPrevented: true });
+  assert.equal(h.doc.activeElement, last);
+  dialog.open = false;
+  assert.equal(h.press(dialog, last).defaultPrevented, false);
+});
+
+test('interface: dialog focus fallback and close restoration remain local to each dialog', () => {
+  const h = dialogEventHarness();
+  const first = h.makeControl('close'), last = h.makeControl('submit');
+  const dialog = h.open([first, last]);
+  assert.equal(h.press(dialog, dialog).defaultPrevented, true);
+  assert.equal(h.doc.activeElement, first);
+  assert.equal(h.press(dialog, h.doc.body, { shiftKey: true }).defaultPrevented, true);
+  assert.equal(h.doc.activeElement, last);
+  dialog.close();
+  assert.equal(h.doc.activeElement, h.opener);
+  const second = h.open([h.makeControl('confirm-cancel'), h.makeControl('confirm-action')]);
+  assert.equal(h.press(dialog, first).defaultPrevented, false, 'A closed replaced dialog cannot intercept Tab');
+  const secondLast = second.controls.at(-1);
+  assert.equal(h.press(second, secondLast).defaultPrevented, true);
+  assert.equal(h.doc.activeElement, second.controls[0]);
+  h.opener.isConnected = false;
+  second.close();
+  assert.equal(h.doc.activeElement, h.fallback, 'Disconnected opener uses the existing add-source fallback');
+});
+
+test('interface: empty dialog prevents Tab escape without adding tabindex to native dialog', () => {
+  const h = dialogEventHarness();
+  const dialog = h.open([]);
+  assert.equal(h.press(dialog, dialog).defaultPrevented, true);
+  assert.equal(h.doc.activeElement, dialog);
+  assert.equal(Object.hasOwn(dialog, 'tabIndex'), false);
+});

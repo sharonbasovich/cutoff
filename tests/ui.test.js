@@ -8,7 +8,7 @@ import { assertResolvedFoldCalendarExport } from './calendar-export-assertions.j
 const port=Number(process.env.TEST_PORT||4387),base=`http://127.0.0.1:${port}`;
 const server=spawn(process.execPath,['scripts/serve.mjs'],{env:{...process.env,PORT:String(port)},stdio:['ignore','pipe','pipe']});
 let browser;
-const results=[]; const consoleErrors=[]; const remoteRequests=[];
+const results=[]; const consoleErrors=[]; const remoteRequests=[]; const focusTrace=[];
 const check=async(name,fn)=>{await fn();results.push({name,status:'passed'});console.log(`PASS ${name}`);};
 const loadExample=async(page,id)=>{
   await page.locator(`[data-example="${id}"]`).click();
@@ -19,6 +19,22 @@ const loadExample=async(page,id)=>{
 const stored=page=>page.evaluate(()=>JSON.parse(localStorage.getItem('cutoff.workspace.v1')));
 const exportButton=page=>page.locator('[data-action="export"]');
 const close=page=>page.keyboard.press('Escape');
+const recordDialogFocus=async(page,stage,direction=null,step=null)=>{
+  const state=await page.evaluate(()=>{
+    const active=document.activeElement,dialog=active?.closest('dialog[open]');
+    return {tag:active?.tagName||null,id:active?.id||null,openDialog:dialog?.id||null,insideOpenDialog:!!dialog,hasFocus:document.hasFocus()};
+  });
+  const entry={stage,direction,step,...state};focusTrace.push(entry);return entry;
+};
+const assertDialogBoundary=async(page,dialogSelector,lastSelector,stage)=>{
+  const first=page.locator(`${dialogSelector} [aria-label="Close dialog"]`),last=page.locator(lastSelector);
+  await first.focus();await page.keyboard.press('Shift+Tab');
+  const reverse=await recordDialogFocus(page,stage,'Shift+Tab','first-to-last');
+  assert.equal(await last.evaluate(element=>document.activeElement===element),true,JSON.stringify(reverse));
+  await page.keyboard.press('Tab');
+  const forward=await recordDialogFocus(page,stage,'Tab','last-to-first');
+  assert.equal(await first.evaluate(element=>document.activeElement===element),true,JSON.stringify(forward));
+};
 const noOverflow=async(page)=>assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
 const captureModalEvidence=async(page)=>{
   const layout=await page.evaluate(()=>{
@@ -123,13 +139,20 @@ try {
   await check('add source, safe text rendering, repeated edit/remove confirmation and cancel',async()=>{
     await page.locator('#add-source').click();await page.locator('[name="label"]').fill('<img src=x onerror=alert(1)>');await page.locator('[name="quote"]').fill('<script>window.injection=true</script> November 1, 2026 12:00 UTC');await page.locator('[name="date"]').fill('2026-11-01');await page.locator('[name="time"]').fill('12:00');await page.locator('[name="zone"]').fill('UTC');await page.locator('[name="url"]').fill('javascript:alert(1)');await page.locator('#source-form button[type="submit"]').click();assert.match(await page.locator('#source-error').textContent(),/http/);
     await page.locator('[name="url"]').fill('https://example.com/source');await page.locator('#source-form button[type="submit"]').click();await page.waitForTimeout(60);assert.equal(await page.locator('.source-card').count(),1);assert.equal(await page.evaluate(()=>window.injection),undefined);assert.equal(await page.locator('.source-card img').count(),0);
-    for(let i=0;i<2;i++) {await page.locator('[data-edit]').click();await page.locator('#source-label').fill(`Keep unsaved draft ${i}`);await page.locator('[data-delete]').click();await page.waitForTimeout(100);assert.equal(await page.locator('#confirm-action').isVisible(),true);await page.locator('#confirm-cancel').click();await page.waitForTimeout(50);assert.equal(await page.locator('.source-card').count(),1);assert.equal(await page.locator('#source-label').inputValue(),`Keep unsaved draft ${i}`);await close(page);await page.waitForTimeout(50);}
+    for(let i=0;i<2;i++) {await page.locator('[data-edit]').click();await page.locator('#source-label').fill(`Keep unsaved draft ${i}`);await page.locator('[data-delete]').click();await page.waitForTimeout(100);assert.equal(await page.locator('#confirm-action').isVisible(),true);await assertDialogBoundary(page,'#reset-dialog','#confirm-action',`remove-confirm-${i}`);await page.locator('#confirm-cancel').click();await page.waitForTimeout(50);assert.equal(await page.locator('.source-card').count(),1);assert.equal(await page.locator('#source-label').inputValue(),`Keep unsaved draft ${i}`);assert.equal(await page.locator('#source-label').evaluate(element=>document.activeElement===element),true,JSON.stringify(await recordDialogFocus(page,`restored-edit-${i}`)));await assertDialogBoundary(page,'#source-dialog','#source-form button[type="submit"]',`restored-edit-${i}`);await close(page);await page.waitForTimeout(50);}
     await page.locator('[data-edit]').click();await page.locator('[data-delete]').click();await page.waitForTimeout(60);await page.locator('#confirm-action').click();await page.waitForTimeout(60);assert.equal(await page.locator('.source-card').count(),0);
   });
   await check('agreement export unlocks and modal keyboard focus is contained',async()=>{
-    await loadExample(page,'agreement');assert.equal(await exportButton(page).isEnabled(),true);await page.locator('#add-source').click();await captureModalEvidence(page);await axe(page,'modal');
-    for(let i=0;i<20;i++){await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>!!document.activeElement.closest('dialog')),true);}
+    await loadExample(page,'agreement');assert.equal(await exportButton(page).isEnabled(),true);await page.locator('#add-source').click();await captureModalEvidence(page);
+    assert.equal((await recordDialogFocus(page,'before-modal-axe')).id,'source-label');await axe(page,'modal');
+    const afterAxe=await recordDialogFocus(page,'after-modal-axe');assert.equal(afterAxe.insideOpenDialog,true,JSON.stringify(afterAxe));
+    for(let i=0;i<20;i++){await page.keyboard.press('Tab');const focus=await recordDialogFocus(page,'source-dialog-traversal','Tab',i+1);assert.equal(await page.evaluate(()=>!!document.activeElement.closest('dialog')),true,JSON.stringify(focus));assert.equal(focus.insideOpenDialog,true,JSON.stringify(focus));}
+    for(let i=0;i<20;i++){await page.keyboard.press('Shift+Tab');const focus=await recordDialogFocus(page,'source-dialog-traversal','Shift+Tab',i+1);assert.equal(await page.evaluate(()=>!!document.activeElement.closest('dialog')),true,JSON.stringify(focus));assert.equal(focus.insideOpenDialog,true,JSON.stringify(focus));}
+    await assertDialogBoundary(page,'#source-dialog','#source-form button[type="submit"]','add-source-boundaries');
     await close(page);await page.waitForTimeout(60);assert.equal(await page.locator('dialog[open]').count(),0);
+    assert.equal(await page.locator('#add-source').evaluate(element=>document.activeElement===element),true,JSON.stringify(await recordDialogFocus(page,'after-source-escape')));
+    await page.locator('#add-source').click();await page.locator('#source-form .dialog-footer [data-action="close"]').click();await page.waitForTimeout(60);assert.equal(await page.locator('dialog[open]').count(),0);
+    assert.equal(await page.locator('#add-source').evaluate(element=>document.activeElement===element),true,JSON.stringify(await recordDialogFocus(page,'after-source-cancel')));
   });
   await check('mobile 390px and 320px no horizontal overflow; responsive screenshot',async()=>{
     await page.setViewportSize({width:390,height:844});await noOverflow(page);await axe(page,'mobile');await page.screenshot({path:'evidence/mobile-agreement.png',fullPage:true});
@@ -145,8 +168,8 @@ try {
     const blocked=await browser.newContext();await blocked.addInitScript(()=>{Storage.prototype.setItem=function(){throw new DOMException('Storage blocked','QuotaExceededError');};});const p=await blocked.newPage();await p.goto(base);await p.locator('#display-zone').fill('Asia/Tokyo');await p.locator('#settings-form button').click();assert.match(await p.locator('.storage-warning').textContent(),/could not save/);assert.equal(await p.locator('.source-card').count(),2);await blocked.close();
   });
   await check('no unhandled browser exceptions or outbound app requests',async()=>{assert.deepEqual(consoleErrors,[]);assert.deepEqual(remoteRequests,[]);});
-  await writeFile('evidence/ui-results.json',JSON.stringify({testedAt:new Date().toISOString(),browser:await browser.version(),viewportWidths:[1440,390,320],results,consoleErrors,remoteRequests},null,2));
+  await writeFile('evidence/ui-results.json',JSON.stringify({testedAt:new Date().toISOString(),browser:await browser.version(),viewportWidths:[1440,390,320],results,consoleErrors,remoteRequests,focusTrace},null,2));
   console.log(`\n${results.length} browser checks passed.`);
 } catch(error) {
-  await writeFile('evidence/ui-failure.txt',String(error.stack||error));throw error;
+  await writeFile('evidence/ui-failure.txt',`${String(error.stack||error)}\n\nFocus trace (synthetic test controls only):\n${JSON.stringify(focusTrace,null,2)}`);throw error;
 } finally {await browser?.close();server.kill('SIGTERM');}
