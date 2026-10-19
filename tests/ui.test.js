@@ -20,6 +20,48 @@ const stored=page=>page.evaluate(()=>JSON.parse(localStorage.getItem('cutoff.wor
 const exportButton=page=>page.locator('[data-action="export"]');
 const close=page=>page.keyboard.press('Escape');
 const noOverflow=async(page)=>assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
+const captureModalEvidence=async(page)=>{
+  const layout=await page.evaluate(()=>{
+    const identify=element=>({tag:element.tagName.toLowerCase(),id:element.id,classes:element.className,for:element.getAttribute('for')});
+    const rect=value=>({x:value.x,y:value.y,top:value.top,right:value.right,bottom:value.bottom,left:value.left,width:value.width,height:value.height});
+    const properties=['color','backgroundColor','fontFamily','fontSize','fontWeight','lineHeight','display','position','zIndex','opacity','overflowX','overflowY','boxSizing','paddingTop','paddingRight','paddingBottom','paddingLeft','marginTop','marginRight','marginBottom','marginLeft','borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth','whiteSpace','transform'];
+    const describe=element=>{
+      const style=getComputedStyle(element),bounds=element.getBoundingClientRect();
+      const value={...identify(element),bounds:rect(bounds),clientRects:[...element.getClientRects()].map(rect),
+        scroll:{left:element.scrollLeft,top:element.scrollTop,width:element.scrollWidth,height:element.scrollHeight,clientWidth:element.clientWidth,clientHeight:element.clientHeight},
+        style:Object.fromEntries(properties.map(name=>[name,style[name]]))};
+      if(element.matches('input,textarea')){
+        const placeholder=getComputedStyle(element,'::placeholder');
+        value.placeholderStyle=Object.fromEntries(['color','backgroundColor','fontFamily','fontSize','fontWeight','lineHeight','opacity'].map(name=>[name,placeholder[name]]));
+      }
+      return value;
+    };
+    const dialog=document.querySelector('dialog[open]');
+    const nearby=new Set([document.body,document.querySelector('#source-form'),document.querySelector('#source-form .form-grid'),document.querySelector('#source-form .dialog-footer')]);
+    const targets=['#source-quote','#source-zone-hint'].map(selector=>{
+      const element=document.querySelector(selector);
+      if(!element)return {selector,missing:true};
+      const field=element.closest('.form-field');
+      for(const neighbor of [field?.previousElementSibling,field,field?.nextElementSibling]){
+        if(!neighbor)continue;nearby.add(neighbor);
+        for(const child of neighbor.querySelectorAll('label,label span,input,textarea,select,.field-hint'))nearby.add(child);
+      }
+      const bounds=element.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(element);
+      const points=[[bounds.left+1,bounds.top+1],[bounds.right-1,bounds.top+1],[(bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2],[bounds.left+1,bounds.bottom-1],[bounds.right-1,bounds.bottom-1]];
+      const hitTests=points.map(([x,y])=>{
+        if(x<0||x>=innerWidth||y<0||y>=innerHeight)return {x,y,outsideViewport:true};
+        const hits=document.elementsFromPoint(x,y).slice(0,5);for(const hit of hits)nearby.add(hit);
+        return {x,y,elementsFrontToBack:hits.map(identify)};
+      });
+      return {selector,...describe(element),contentRects:[...range.getClientRects()].map(rect),hitTests};
+    });
+    return {viewport:{width:innerWidth,height:innerHeight,devicePixelRatio,scrollX,scrollY,visualViewport:window.visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null},
+      document:describe(document.documentElement),dialog:dialog?describe(dialog):null,activeElement:document.activeElement?identify(document.activeElement):null,
+      targets,nearby:[...nearby].filter(Boolean).map(describe)};
+  });
+  await writeFile('evidence/modal-layout.json',JSON.stringify(layout,null,2));
+  await page.screenshot({path:'evidence/desktop-source-dialog.png',fullPage:true});
+};
 const axe=async(page,name)=>{
   const report=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
   await writeFile(`evidence/axe-${name}.json`,JSON.stringify({violations:report.violations,incomplete:report.incomplete.map(x=>({id:x.id,impact:x.impact,nodes:x.nodes.map(y=>({target:y.target,failureSummary:y.failureSummary}))}))},null,2));
@@ -85,7 +127,7 @@ try {
     await page.locator('[data-edit]').click();await page.locator('[data-delete]').click();await page.waitForTimeout(60);await page.locator('#confirm-action').click();await page.waitForTimeout(60);assert.equal(await page.locator('.source-card').count(),0);
   });
   await check('agreement export unlocks and modal keyboard focus is contained',async()=>{
-    await loadExample(page,'agreement');assert.equal(await exportButton(page).isEnabled(),true);await page.locator('#add-source').click();await axe(page,'modal');
+    await loadExample(page,'agreement');assert.equal(await exportButton(page).isEnabled(),true);await page.locator('#add-source').click();await captureModalEvidence(page);await axe(page,'modal');
     for(let i=0;i<20;i++){await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>!!document.activeElement.closest('dialog')),true);}
     await close(page);await page.waitForTimeout(60);assert.equal(await page.locator('dialog[open]').count(),0);
   });

@@ -170,3 +170,93 @@ test('interface: source-index badge colors retain at least 5:1 contrast for smal
   const ratio = contrast(color('color'), color('background'));
   assert.ok(ratio >= 5, `Badge contrast ${ratio.toFixed(2)}:1 must retain margin above the 4.5:1 requirement`);
 });
+
+
+test('interface: modal description retains at least 5:1 contrast for normal text', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const descriptionRule = css.match(/\.dialog-description\s*\{([^}]+)\}/)?.[1];
+  const dialogRule = css.match(/\.dialog\s*\{([^}]+)\}/)?.[1];
+  const rootRule = css.match(/:root\s*\{([^}]+)\}/)?.[1];
+  assert.ok(descriptionRule && dialogRule && rootRule, 'The modal description, dialog and root rules must exist');
+  assert.match(dialogRule, /(?:^|;)background:\s*var\(--paper\)(?=;|$)/);
+  const foreground = descriptionRule.match(/(?:^|;)color:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1];
+  const background = rootRule.match(/(?:^|;)--paper:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1];
+  assert.ok(foreground && background, 'The modal description and paper token must have literal six-digit hex colors');
+  const luminance = hex => {
+    const channels = [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+    const [red, green, blue] = channels.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const contrast = (foreground, background) => {
+    const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (values[0] + 0.05) / (values[1] + 0.05);
+  };
+  assert.equal(contrast('#000000', '#ffffff'), 21);
+  assert.ok(contrast('#69755d', '#f6f5f0') < 4.5, 'The original modal description pair is a negative control');
+  const ratio = contrast(foreground, background);
+  assert.ok(ratio >= 5, `Modal description contrast ${ratio.toFixed(2)}:1 must retain margin above the 4.5:1 requirement`);
+});
+
+
+function declaredColorContrast(foreground, background) {
+  const luminance = hex => {
+    const channels = [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+    const [red, green, blue] = channels.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
+test('interface: source count keeps its meaningful digit visible with at least 5:1 contrast', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const rule = css.match(/\.count\s*\{([^}]+)\}/)?.[1];
+  assert.ok(rule, 'The source count base rule must exist');
+  const foreground = rule.match(/(?:^|;)color:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1];
+  const background = rule.match(/(?:^|;)background:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1];
+  assert.ok(foreground && background, 'The source count must have literal six-digit hex colors');
+  assert.equal(declaredColorContrast('#000000', '#ffffff'), 21);
+  assert.ok(declaredColorContrast('#68735c', '#e7eade') < 4.5, 'The original count pair is a negative control');
+  const ratio = declaredColorContrast(foreground, background);
+  assert.ok(ratio >= 5, `Source count contrast ${ratio.toFixed(2)}:1 must retain margin above 4.5:1`);
+  const data = stateFrom();
+  const html = harness({ stored: JSON.stringify(data) }).nodes.get('#app').innerHTML;
+  assert.match(html, new RegExp(`<span class="count">${data.case.sources.length}</span>`));
+});
+
+test('interface: source timeline renders as a named group', () => {
+  for (const id of ['agreement', 'disagreement']) {
+    const h = harness({ stored: JSON.stringify(stateFrom(id)) });
+    assert.match(h.evaluate('renderTimeline()'), /^<div class="timeline" role="group" aria-label="Source timeline">/, id);
+  }
+  const partial = stateFrom();
+  partial.case.sources[0].zone = '';
+  const h = harness({ stored: JSON.stringify(partial) });
+  assert.match(h.evaluate('renderTimeline()'), /^<div class="timeline" role="group" aria-label="Source timeline">/);
+  assert.match(h.evaluate('renderTimeline()'), /Only resolved sources appear here/);
+});
+
+test('interface: planning separator alone is decorative and inherits readable text color', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const separatorRule = css.match(/\.planning-zone>span\s*\{([^}]+)\}/)?.[1];
+  const zoneRule = css.match(/\.planning-zone\s*\{([^}]+)\}/)?.[1];
+  const cardRule = css.match(/\.planning-card\s*\{([^}]+)\}/)?.[1];
+  const rootRule = css.match(/:root\s*\{([^}]+)\}/)?.[1];
+  assert.ok(separatorRule && zoneRule && cardRule && rootRule, 'The planning color rules must exist');
+  assert.match(separatorRule, /(?:^|;)color:\s*inherit(?=;|$)/);
+  assert.match(cardRule, /(?:^|;)background:\s*var\(--blue\)(?=;|$)/);
+  const foreground = zoneRule.match(/(?:^|;)color:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1];
+  const background = rootRule.match(/(?:^|;)--blue:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1];
+  assert.ok(foreground && background, 'The planning zone and blue token must have literal six-digit hex colors');
+  assert.ok(declaredColorContrast('#99b0ff', '#254bd9') < 4.5, 'The original separator pair is a negative control');
+  const ratio = declaredColorContrast(foreground, background);
+  assert.ok(ratio >= 5, `Planning separator contrast ${ratio.toFixed(2)}:1 must retain margin above 4.5:1`);
+  for (const id of ['agreement', 'disagreement']) {
+    const data = stateFrom(id);
+    const h = harness({ stored: JSON.stringify(data) });
+    const html = h.evaluate('renderPlanning()');
+    const zone = html.match(/<div class="planning-zone">([^]*?)<\/div>/)?.[1];
+    const parts = ui.dateParts(model.analyzeCase(data.case).planningInstant, data.case.localZone);
+    assert.equal(zone, `${parts.weekday} <span aria-hidden="true">·</span> ${data.case.localZone}`);
+  }
+});
