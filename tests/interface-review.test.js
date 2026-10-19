@@ -1,7 +1,8 @@
 /**
  * Interface source-contract checks. These execute actual app helper/render/storage
  * code in Node vm with explicit document/storage stubs. They DO NOT run a
- * browser, parse HTML, validate native forms, test CSS, or prove accessibility.
+ * browser, parse HTML, validate native forms, or prove accessibility. The CSS
+ * regression checks literal colors, not computed styles or the rendered cascade.
  * Run: node --test tests/interface-review.test.js
  */
 import test from 'node:test';
@@ -143,4 +144,29 @@ test('interface: calendar export is a tentative, transparent one-minute planning
   assert.match(text, /not an official deadline/);
   assert.match(text, /Original statement:/);
   assert.doesNotMatch(text, /BEGIN:VALARM/);
+});
+
+
+test('interface: source-index badge colors retain at least 5:1 contrast for small text', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const badgeRule = css.match(/\.source-index\s*\{([^}]+)\}/)?.[1];
+  assert.ok(badgeRule, 'The source-index base rule must exist');
+  const color = property => {
+    const value = badgeRule.match(new RegExp(`(?:^|;)${property}:\\s*(#[0-9a-f]{6})(?=;|$)`, 'i'))?.[1];
+    assert.ok(value, `The badge ${property} must have a literal six-digit hex color`);
+    return value;
+  };
+  const luminance = hex => {
+    const channels = [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+    const [red, green, blue] = channels.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const contrast = (foreground, background) => {
+    const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (values[0] + 0.05) / (values[1] + 0.05);
+  };
+  assert.equal(contrast('#000000', '#ffffff'), 21);
+  assert.ok(contrast('#6a775c', '#f0f2e9') < 4.5, 'The original failing pair is a negative control');
+  const ratio = contrast(color('color'), color('background'));
+  assert.ok(ratio >= 5, `Badge contrast ${ratio.toFixed(2)}:1 must retain margin above the 4.5:1 requirement`);
 });
