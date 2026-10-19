@@ -35,18 +35,20 @@ Run non-browser checks separately with `npm test` and `npm run build`. See [VERI
 
 ## Verification snapshot
 
-As of October 19, 2026, before the first hosted CI run:
+As of October 19, 2026, [the hosted Chromium check](https://github.com/sharonbasovich/cutoff/actions/runs/39269888629) passes:
 
-- 59 Node tests pass, including 2,176 explicitly counted property cases; the production build passes.
-- The independent calendar-parser suite passes four groups covering 114 fresh synthetic exports, one retained synthetic fixture, and two negative controls.
-- The 17 prepared browser-check groups have not run successfully: the earlier local browser attempt failed before page load. Rendered accessibility, responsive screenshots, keyboard flows and browser downloads remain unverified.
-- This is development source, not a release or a deployment. See the [verification details and limits](VERIFICATION.md).
+- 78 Node tests, including 2,176 explicitly counted property cases, and the production build.
+- All 17 browser-check groups, including clarification and storage flows, dialog keyboard navigation, calendar download, and responsive checks at 1440, 390 and 320 pixels.
+- Desktop and 390-pixel main-page axe checks report no violations or incomplete results. The desktop source dialog reports no violations and two color-contrast targets requiring manual review; their scoped screenshot, geometry and contrast review passed. The raw incomplete flags remain recorded.
+- Independent calendar parsing passes four groups covering 114 fresh synthetic exports, one retained synthetic fixture and two negative controls. The actual hosted browser download also passes independent parsing.
 
-The GitHub Actions workflow runs on pushes and pull requests to `main`, and can also be started manually. It uses Ubuntu 24.04, Node.js 24, read-only repository permissions, no persisted checkout credentials, no dependency cache, and a 15-minute job limit. It retains only newly generated synthetic browser QA outputs for one day. It has no deployment or publishing step.
+Six captured screenshots were reviewed, including the desktop and 390-pixel source dialogs. The 320-pixel capture covers the main page only. This is a development verification snapshot, not a release, deployment or full accessibility certification. See [VERIFICATION.md](VERIFICATION.md) for the exact revisions, evidence and limits.
+
+The GitHub Actions workflow runs on pushes and pull requests to `main`, and can also be started manually. It uses Ubuntu 24.04 and Node.js 24 and retains newly generated synthetic browser QA outputs for one day. It has no deployment or publishing step.
 
 ## Privacy and limits
 
-The app has no accounts, analytics, tracking, paid APIs or remote data fetches. Assets are self-hosted; the page's Content Security Policy disables app network connections. The intended no-network behavior still needs its browser assertion to run. Following a source link opens that external site.
+The app has no accounts, analytics, tracking, paid APIs or remote data fetches. Assets are self-hosted; the page's Content Security Policy disables app network connections. The tested browser flows produced no observed outbound app requests. Following a source link opens that external site.
 
 Workspace data is saved in this browser's local storage. It is not encrypted, synchronized or backed up; anyone with access to the browser profile may be able to read it. Storage can be blocked or cleared. The hosting page must be available when loading the app.
 
