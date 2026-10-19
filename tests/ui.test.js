@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { assertResolvedFoldCalendarExport } from './calendar-export-assertions.js';
 
 const port=Number(process.env.TEST_PORT||4387),base=`http://127.0.0.1:${port}`;
 const server=spawn(process.execPath,['scripts/serve.mjs'],{env:{...process.env,PORT:String(port)},stdio:['ignore','pipe','pipe']});
@@ -48,8 +49,8 @@ try {
     await page.waitForTimeout(60);assert.equal(await exportButton(page).isEnabled(),true);assert.equal(await page.locator('blockquote').textContent(),quote);
     const s=(await stored(page)).case.sources[0];assert.equal(s.time,'01:30');assert.equal(s.zone,'America/New_York');assert.equal(s.resolution.fold,'later');
     await page.screenshot({path:'evidence/desktop-fold-resolved.png',fullPage:true});
-    const dl=page.waitForEvent('download');await exportButton(page).click();const d=await dl;const text=await readFile(await d.path(),'utf8');
-    assert.match(text,/DTSTART:20261101T060000Z/);assert.match(text,/SUMMARY:Planning target:/);assert.match(text,/Original statement:/);await writeFile('evidence/export-example.ics',text);
+    const dl=page.waitForEvent('download');await exportButton(page).click();const d=await dl;const bytes=await readFile(await d.path());
+    await writeFile('evidence/export-example.ics',bytes);assertResolvedFoldCalendarExport(bytes);
   });
   await check('saved clarification survives reload',async()=>{await page.reload();assert.equal((await stored(page)).case.sources[0].resolution.fold,'later');assert.equal(await exportButton(page).isEnabled(),true);});
   await check('edit Cancel and Escape keep state, saving resets stale clarifications',async()=>{
