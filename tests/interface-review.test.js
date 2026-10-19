@@ -383,3 +383,22 @@ test('interface: empty dialog prevents Tab escape without adding tabindex to nat
   assert.equal(h.doc.activeElement, dialog);
   assert.equal(Object.hasOwn(dialog, 'tabIndex'), false);
 });
+
+
+test('interface: save-state text retains at least 5:1 contrast on desktop and mobile backgrounds', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const rule = css.match(/\.save-state\s*\{([^}]+)\}/)?.[1];
+  const rootRule = css.match(/:root\s*\{([^}]+)\}/)?.[1];
+  const sidebarBackgrounds = [...css.matchAll(/\.sidebar\s*\{([^}]+)\}/g)]
+    .map(match => match[1].match(/(?:^|;)background:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1]).filter(Boolean);
+  assert.ok(rule && rootRule, 'The save-state and root rules must exist');
+  assert.equal(sidebarBackgrounds.length, 1, 'The mobile sidebar must have one explicit background');
+  const foreground = rule.match(/(?:^|;)color:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1];
+  const paper = rootRule.match(/(?:^|;)--paper:\s*(#[0-9a-f]{6})(?=;|$)/i)?.[1];
+  assert.ok(foreground && paper, 'The save-state and paper token must have literal six-digit hex colors');
+  assert.ok(declaredColorContrast('#6a735f', '#f0f1e9') < 4.5, 'The original mobile pair is a negative control');
+  for (const [name, background] of [['mobile', sidebarBackgrounds[0]], ['desktop', paper]]) {
+    const ratio = declaredColorContrast(foreground, background);
+    assert.ok(ratio >= 5, `Save-state ${name} contrast ${ratio.toFixed(2)}:1 must retain margin above 4.5:1`);
+  }
+});
