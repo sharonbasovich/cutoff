@@ -114,7 +114,7 @@ function verdictText(resolvedCount, unresolvedCount) {
 function renderPlanning() {
   if (!analysis.planningInstant || !analysis.allResolved) return `<div class="planning-placeholder">${icon('clock')}<div><strong>${analysis.status === 'empty' ? 'Your planning target will appear here.' : 'Uncertainty first. A target second.'}</strong><p>${analysis.status === 'empty' ? 'Compare sources, then leave a little breathing room.' : 'No planning target is calculated while a source is unresolved or invalid.'}</p></div></div>`;
   const parts = dateParts(analysis.planningInstant, state.case.localZone);
-  return `<div class="planning-card"><div class="planning-main"><div class="planning-label"><span class="live-dot"></span> CONSERVATIVE PLANNING TARGET</div><div class="planning-date">${escape(parts.day)} <span class="planning-time">${escape(parts.time)}</span></div><div class="planning-zone">${escape(parts.weekday)} <span>·</span> ${escape(state.case.localZone)}</div></div><div class="planning-aside"><span class="buffer-value">${duration(state.case.bufferMinutes)}</span><span>before the earliest<br>source deadline</span></div><div class="planning-disclaimer">${icon('clock')} Your personal target. It does not replace any source statement.</div></div>`;
+  return `<div class="planning-card"><div class="planning-main"><div class="planning-label"><span class="live-dot"></span> CONSERVATIVE PLANNING TARGET</div><div class="planning-date">${escape(parts.day)} <span class="planning-time">${escape(parts.time)}</span></div><div class="planning-zone">${escape(parts.weekday)} <span aria-hidden="true">·</span> ${escape(state.case.localZone)}</div></div><div class="planning-aside"><span class="buffer-value">${duration(state.case.bufferMinutes)}</span><span>before the earliest<br>source deadline</span></div><div class="planning-disclaimer">${icon('clock')} Your personal target. It does not replace any source statement.</div></div>`;
 }
 function renderTimeline() {
   const results = analysis.results.filter(r => r.status === 'resolved');
@@ -130,7 +130,7 @@ function renderTimeline() {
     else grouped.push({ epochMs: result.epochMs, instant: result.instant, labels: [sourceName(result, index)] });
   });
   grouped.sort((a, b) => a.epochMs - b.epochMs);
-  return `<div class="timeline" aria-label="Source timeline"><div class="timeline-header"><span class="eyebrow">ON ONE TIMELINE</span><span>${escape(state.case.localZone)}</span></div><div class="timeline-track" aria-hidden="true"><div class="timeline-line"></div>${analysis.planningInstant ? '<span class="timeline-marker planning-marker" style="left:8%"></span>' : ''}${grouped.map(item => `<span class="timeline-marker source-marker" style="left:${8 + (item.epochMs - min) / span * 84}%"></span>`).join('')}</div><div class="timeline-legend">${analysis.planningInstant ? `<div><span class="legend-dot planning-legend"></span><span><strong>${escape(dateParts(analysis.planningInstant, state.case.localZone).time)}</strong><small>Your planning target</small></span></div>` : ''}${grouped.map(item => `<div><span class="legend-dot"></span><span><strong>${escape(dateParts(item.instant, state.case.localZone).time)}</strong><small>${item.labels.map(escape).join(' + ')}</small></span></div>`).join('')}</div><p class="timeline-caption">${analysis.status === 'blocked' ? 'Only resolved sources appear here. No planning target yet.' : 'Relative spacing shows time between instants. Full dates appear in each source below.'}</p></div>`;
+  return `<div class="timeline" role="group" aria-label="Source timeline"><div class="timeline-header"><span class="eyebrow">ON ONE TIMELINE</span><span>${escape(state.case.localZone)}</span></div><div class="timeline-track" aria-hidden="true"><div class="timeline-line"></div>${analysis.planningInstant ? '<span class="timeline-marker planning-marker" style="left:8%"></span>' : ''}${grouped.map(item => `<span class="timeline-marker source-marker" style="left:${8 + (item.epochMs - min) / span * 84}%"></span>`).join('')}</div><div class="timeline-legend">${analysis.planningInstant ? `<div><span class="legend-dot planning-legend"></span><span><strong>${escape(dateParts(analysis.planningInstant, state.case.localZone).time)}</strong><small>Your planning target</small></span></div>` : ''}${grouped.map(item => `<div><span class="legend-dot"></span><span><strong>${escape(dateParts(item.instant, state.case.localZone).time)}</strong><small>${item.labels.map(escape).join(' + ')}</small></span></div>`).join('')}</div><p class="timeline-caption">${analysis.status === 'blocked' ? 'Only resolved sources appear here. No planning target yet.' : 'Relative spacing shows time between instants. Full dates appear in each source below.'}</p></div>`;
 }
 function renderSource(source, result, index) {
   if (!result) return `<article class="source-card"><h3>${escape(source.label)}</h3><p role="alert">This source could not be analyzed.</p><button class="button button-outline" data-action="edit-source" data-id="${escape(source.id)}" data-edit="${escape(source.id)}">Edit source</button></article>`;
@@ -154,6 +154,21 @@ function openDialog(html, initialFocus) {
     }
   });
   dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close(); } });
+  dialog.addEventListener('keydown', event => {
+    if (event.key !== 'Tab' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || !dialog.open) return;
+    // Keep the app's tab cycle inside the modal; leave native interior controls alone.
+    const tabbable = [...dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]')].filter(element =>
+      element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[hidden], [inert]') &&
+      element.getClientRects().length > 0 && getComputedStyle(element).visibility === 'visible');
+    const first = tabbable[0], last = tabbable.at(-1), active = document.activeElement;
+    if (!first) {
+      event.preventDefault();
+      dialog.focus();
+    } else if ((!event.shiftKey && active === last) || (event.shiftKey && active === first) || active === dialog || !dialog.contains(active)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+  });
   dialog.showModal();
   (initialFocus ? dialog.querySelector(initialFocus) : dialog.querySelector('input,button'))?.focus();
   return dialog;

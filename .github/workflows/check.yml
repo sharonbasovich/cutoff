@@ -53,6 +53,8 @@ jobs:
           path: |
             evidence/desktop-conflict.png
             evidence/desktop-fold-resolved.png
+            evidence/desktop-source-dialog.png
+            evidence/modal-layout.json
             evidence/mobile-agreement.png
             evidence/mobile-source-dialog.png
             evidence/mobile-320.png
