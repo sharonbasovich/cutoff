@@ -83,3 +83,28 @@ Follow the complete-check commands in [README.md](README.md). The harness starts
 The workflow has a 15-minute job limit, runs for pushes and pull requests to `main`, supports manual dispatch and has no deployment or publishing step. It retains only explicitly listed, newly generated synthetic evidence for one day. Historical screenshots and QA reports are not checked into the repository.
 
 The browser harness stops at its first failure. For any future run, inspect that exact revision's logs and generated evidence; partial results or a missing artifact are not a full pass.
+
+## Verified stale-workspace guard (October 21, 2026)
+
+A source-only candidate based on `61b71d0490475118c88a6f0f59e13ac97128d5f7`
+checks the saved workspace bytes against this tab's last successful read/write
+before ordinary saves. A changed, removed, or newly created saved workspace
+blocks stale writes, leaves this tab's edits in memory, and presents a recovery
+warning. Reload discards these local edits in favor of saved data; Start fresh
+requires its existing confirmation and explicitly warns that it replaces
+changes from other tabs. Calendar export remains available for an otherwise
+valid in-memory case. This is best-effort stale-write detection, not atomic
+multi-tab synchronization or a workspace backup.
+
+Local Node.js 24.19.0 verification: 85 tests pass, including seven added interface
+regression groups; production build and JavaScript/diff syntax checks pass.
+The hosted [Check run 39614634059](https://github.com/sharonbasovich/cutoff/actions/runs/39614634059)
+passed for PR head `b6d7a3391f97e6eb47c0b43998cef000fd893c56`: all 85 Node tests,
+the production build and all 18 Chromium browser groups. The added real two-tab
+scenario exercises stale-write protection, Cancel, calendar export, explicit
+reset, subsequent saves, reverse conflict and reload. Existing responsive,
+reduced-motion, modal and no-outbound-request groups also passed. This is not
+cross-browser testing, atomic synchronization, a backup, or accessibility certification.
+The original local Chromium attempt was blocked before launch by its executor's
+socket restriction; that local attempt is not claimed as a pass. The hosted run
+used the repository's unchanged Check workflow and locked dependencies.
