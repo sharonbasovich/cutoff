@@ -83,3 +83,23 @@ Follow the complete-check commands in [README.md](README.md). The harness starts
 The workflow has a 15-minute job limit, runs for pushes and pull requests to `main`, supports manual dispatch and has no deployment or publishing step. It retains only explicitly listed, newly generated synthetic evidence for one day. Historical screenshots and QA reports are not checked into the repository.
 
 The browser harness stops at its first failure. For any future run, inspect that exact revision's logs and generated evidence; partial results or a missing artifact are not a full pass.
+
+## Pending stale-workspace guard (October 21, 2026)
+
+A source-only candidate based on `61b71d0490475118c88a6f0f59e13ac97128d5f7`
+checks the saved workspace bytes against this tab's last successful read/write
+before ordinary saves. A changed, removed, or newly created saved workspace
+blocks stale writes, leaves this tab's edits in memory, and presents a recovery
+warning. Reload discards these local edits in favor of saved data; Start fresh
+requires its existing confirmation and explicitly warns that it replaces
+changes from other tabs. Calendar export remains available for an otherwise
+valid in-memory case. This is best-effort stale-write detection, not atomic
+multi-tab synchronization or a workspace backup.
+
+Local Node.js 24.19.0 verification: 85 tests pass, including seven added interface
+regression groups; production build and JavaScript/diff syntax checks pass.
+The new native two-tab browser scenario is authored but not yet executed.
+The local Chromium launch was blocked by the execution environment's socket
+restriction before any browser scenario ran. Existing October 19 browser
+results above describe the earlier revision, not this candidate. Require the
+existing hosted `Check` workflow to pass on the candidate before merging.
