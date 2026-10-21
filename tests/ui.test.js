@@ -167,6 +167,34 @@ try {
   await check('write-blocked storage remains usable and reports unsaved changes',async()=>{
     const blocked=await browser.newContext();await blocked.addInitScript(()=>{Storage.prototype.setItem=function(){throw new DOMException('Storage blocked','QuotaExceededError');};});const p=await blocked.newPage();await p.goto(base);await p.locator('#display-zone').fill('Asia/Tokyo');await p.locator('#settings-form button').click();assert.match(await p.locator('.storage-warning').textContent(),/could not save/);assert.equal(await p.locator('.source-card').count(),2);await blocked.close();
   });
+  await check('stale tabs cannot overwrite newer work; cancellation, export and explicit reset remain usable',async()=>{
+    const tabs=await browser.newContext({acceptDownloads:true});
+    try {
+      const a=await tabs.newPage();a.setDefaultTimeout(4000);a.on('pageerror',e=>consoleErrors.push(e.message));
+      await a.goto(base);await loadExample(a,'agreement');
+      const b=await tabs.newPage();b.setDefaultTimeout(4000);b.on('pageerror',e=>consoleErrors.push(e.message));await b.goto(base);
+      await b.locator('#workspace-title').fill('Newer saved case');await b.locator('#display-zone').focus();
+      await a.locator('#workspace-title').fill('Retained local case');await a.locator('#display-zone').focus();
+      assert.match(await a.locator('.storage-warning').textContent(),/changed outside this tab/);
+      assert.equal((await stored(a)).case.title,'Newer saved case');
+      assert.equal(await a.locator('#workspace-title').inputValue(),'Retained local case');
+      await a.locator('[data-action="reset"]').click();await a.locator('#confirm-cancel').click();
+      assert.equal((await stored(a)).case.title,'Newer saved case');
+      assert.equal(await a.locator('#workspace-title').inputValue(),'Retained local case');
+      const pending=a.waitForEvent('download');await exportButton(a).click();const download=await pending;
+      const calendar=await readFile(await download.path(),'utf8');
+      assert.match(calendar,/SUMMARY:Planning target: Retained local case/);
+      assert.equal((await stored(a)).case.title,'Newer saved case','Export must not overwrite storage');
+      await a.locator('[data-action="reset"]').click();assert.match(await a.locator('#dialog-description').textContent(),/including changes from another tab/);await a.locator('#confirm-action').click();
+      assert.equal((await stored(a)).case.sources.length,0);assert.equal(await a.locator('.storage-warning').count(),0);
+      await a.locator('#workspace-title').fill('New empty case');await a.locator('#display-zone').focus();
+      assert.equal((await stored(a)).case.title,'New empty case');
+      await b.locator('#workspace-title').fill('Stale after reset');await b.locator('#display-zone').focus();
+      assert.match(await b.locator('.storage-warning').textContent(),/changed outside this tab/);
+      assert.equal((await stored(b)).case.title,'New empty case');
+      await b.reload();assert.equal(await b.locator('#workspace-title').inputValue(),'New empty case');assert.equal(await b.locator('.storage-warning').count(),0);
+    } finally { await tabs.close(); }
+  });
   await check('no unhandled browser exceptions or outbound app requests',async()=>{assert.deepEqual(consoleErrors,[]);assert.deepEqual(remoteRequests,[]);});
   await writeFile('evidence/ui-results.json',JSON.stringify({testedAt:new Date().toISOString(),browser:await browser.version(),viewportWidths:[1440,390,320],results,consoleErrors,remoteRequests,focusTrace},null,2));
   console.log(`\n${results.length} browser checks passed.`);
