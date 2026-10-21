@@ -84,7 +84,7 @@ The workflow has a 15-minute job limit, runs for pushes and pull requests to `ma
 
 The browser harness stops at its first failure. For any future run, inspect that exact revision's logs and generated evidence; partial results or a missing artifact are not a full pass.
 
-## Pending stale-workspace guard (October 21, 2026)
+## Verified stale-workspace guard (October 21, 2026)
 
 A source-only candidate based on `61b71d0490475118c88a6f0f59e13ac97128d5f7`
 checks the saved workspace bytes against this tab's last successful read/write
@@ -98,8 +98,13 @@ multi-tab synchronization or a workspace backup.
 
 Local Node.js 24.19.0 verification: 85 tests pass, including seven added interface
 regression groups; production build and JavaScript/diff syntax checks pass.
-The new native two-tab browser scenario is authored but not yet executed.
-The local Chromium launch was blocked by the execution environment's socket
-restriction before any browser scenario ran. Existing October 19 browser
-results above describe the earlier revision, not this candidate. Require the
-existing hosted `Check` workflow to pass on the candidate before merging.
+The hosted [Check run 39614634059](https://github.com/sharonbasovich/cutoff/actions/runs/39614634059)
+passed for PR head `b6d7a3391f97e6eb47c0b43998cef000fd893c56`: all 85 Node tests,
+the production build and all 18 Chromium browser groups. The added real two-tab
+scenario exercises stale-write protection, Cancel, calendar export, explicit
+reset, subsequent saves, reverse conflict and reload. Existing responsive,
+reduced-motion, modal and no-outbound-request groups also passed. This is not
+cross-browser testing, atomic synchronization, a backup, or accessibility certification.
+The original local Chromium attempt was blocked before launch by its executor's
+socket restriction; that local attempt is not claimed as a pass. The hosted run
+used the repository's unchanged Check workflow and locked dependencies.
