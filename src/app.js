@@ -12,6 +12,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 let storageError = '';
 let saved = true;
+let storageSnapshot = null;
 let state = load();
 let analysis;
 
@@ -35,6 +36,7 @@ function initialState() { return { version: 1, exampleId: 'disagreement', modifi
 function load() {
   try {
     const stored = localStorage.getItem(KEY);
+    storageSnapshot = stored;
     if (!stored) { saved = false; return initialState(); }
     const parsed = JSON.parse(stored);
     if (!validState(parsed)) throw new Error('invalid');
@@ -45,9 +47,22 @@ function load() {
     return initialState();
   }
 }
-function persist() {
-  if (storageError) return;
-  try { localStorage.setItem(KEY, JSON.stringify(state)); saved = true; }
+function persist({ replaceExisting = false } = {}) {
+  if (storageError && !replaceExisting) return;
+  try {
+    // Compare the bytes this tab last read/wrote before replacing shared storage.
+    // This is a stale-write guard, not an atomic multi-tab locking protocol.
+    if (!replaceExisting && localStorage.getItem(KEY) !== storageSnapshot) {
+      storageError = 'The saved workspace changed outside this tab. Your edits remain here, but are not saved. Reload to use the saved version (discarding these edits), or use Start fresh only if you intend to replace the saved workspace with an empty case.';
+      saved = false;
+      return;
+    }
+    const serialized = JSON.stringify(state);
+    localStorage.setItem(KEY, serialized);
+    storageSnapshot = serialized;
+    storageError = '';
+    saved = true;
+  }
   catch { storageError = 'This browser could not save your workspace. You can keep working, but changes may be lost when this page closes.'; saved = false; }
 }
 function announce(message) { document.querySelector('#announcer').textContent = message; }
@@ -266,9 +281,9 @@ document.addEventListener('click', event => {
   }
   if (target.dataset.action === 'close') closeDialog();
   if (target.dataset.action === 'add') sourceDialog();
-  if (target.dataset.action === 'reset') confirmDialog({ title: 'Start with a clean slate?', description: 'This removes the current case, source statements, and clarifications saved in this browser. This cannot be undone.', actionLabel: 'Start fresh', destructive: true, action: () => {
+  if (target.dataset.action === 'reset') confirmDialog({ title: 'Start with a clean slate?', description: 'This replaces the workspace saved in this browser, including changes from another tab, with an empty case. Your current source statements and clarifications will be removed. This cannot be undone.', actionLabel: 'Start fresh', destructive: true, action: () => {
     state = { version: 1, exampleId: null, modified: false, case: { title: '', localZone: state.case.localZone || 'UTC', bufferMinutes: 60, sources: [] } };
-    storageError = ''; persist(); render(); announce('Workspace cleared. Add your first source when you’re ready.'); document.querySelector('#workspace-title')?.focus();
+    persist({ replaceExisting: true }); render(); announce('Workspace cleared. Add your first source when you’re ready.'); document.querySelector('#workspace-title')?.focus();
   } });
   if (target.dataset.action === 'export') {
     if (!getAnalysis().canExport) return;
