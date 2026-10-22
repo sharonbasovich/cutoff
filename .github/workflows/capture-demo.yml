@@ -26,6 +26,11 @@ jobs:
         run: |
           git diff --exit-code 75892892b0045692e1c966cef792393943bd0279 -- src public index.html package.json package-lock.json scripts/build.mjs scripts/serve.mjs tests/calendar-export-assertions.js
           git rev-parse HEAD
+      - name: Install ffmpeg from official Ubuntu repositories on the ephemeral runner
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes ffmpeg
           command -v ffprobe
       - name: Set up Node.js 24
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
