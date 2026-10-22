@@ -1,0 +1,75 @@
+name: Capture synthetic Cutoff demo
+
+# Staged for independent review. No push/PR/schedule trigger; never auto-dispatch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cutoff-synthetic-capture-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out reviewed capture harness
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify unchanged application identity
+        shell: bash
+        run: |
+          git diff --exit-code 75892892b0045692e1c966cef792393943bd0279 -- src public index.html package.json package-lock.json scripts/build.mjs scripts/serve.mjs tests/calendar-export-assertions.js
+          git rev-parse HEAD
+          command -v ffprobe
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install exact locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install locked Playwright Chromium from official source
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Check capture syntax and build unchanged app
+        run: |
+          node --check scripts/capture-demo.mjs
+          npm test
+          npm run build
+      - name: Record isolated synthetic interactions
+        run: node scripts/capture-demo.mjs
+      - name: Verify raw video dimensions and duration
+        shell: bash
+        run: |
+          ffprobe -v error -show_format -show_streams -of json evidence/cutoff-recording/raw-browser.webm > evidence/cutoff-recording/video-probe.json
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const p = JSON.parse(readFileSync('evidence/cutoff-recording/video-probe.json', 'utf8'));
+          const v = p.streams.filter(s => s.codec_type === 'video');
+          assert.equal(v.length, 1);
+          assert.equal(v[0].width, 1440);
+          assert.equal(v[0].height, 1000);
+          assert.equal(p.streams.some(s => s.codec_type === 'audio'), false);
+          const seconds = Number(p.format.duration);
+          assert.ok(seconds >= 120 && seconds <= 180, `Duration ${seconds} outside 2–3 minutes`);
+          JS
+      - name: Preserve raw take and synthetic assertions for independent review
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cutoff-raw-demo-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          include-hidden-files: false
+          path: |
+            evidence/cutoff-recording/raw-browser.webm
+            evidence/cutoff-recording/assertions.json
+            evidence/cutoff-recording/video-probe.json
+            evidence/cutoff-recording/clarified-hour.ics
+            evidence/cutoff-recording/agreement.ics
