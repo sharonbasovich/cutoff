@@ -1,7 +1,13 @@
-# Cutoff capture harness — awaiting independent review
+# Cutoff capture harness — runner prerequisite fix awaiting review
 
-This is an isolated own-project CI recording proposal, not desktop automation.
-Do not merge or dispatch before independent review. No run/video is claimed yet.
+This is an isolated own-project CI recording workflow, not desktop automation.
+The original harness was reviewed and merged in PR #3 as
+`0e4f8e77698f26d6c778a0b00c736b613ee92182`; ordinary CI run 39754614465 passed.
+Manual capture run 39755287764 stopped before recording because `ffprobe` was
+absent from Ubuntu 24.04 runner image 20261012.334.1. The unchanged-source guard
+and revision check passed; no video or artifacts were produced. This minimal
+runner prerequisite fix awaits independent review. Do not merge or dispatch
+this fix before that review. No successful capture is claimed.
 
 The application remains pinned to source `75892892b0045692e1c966cef792393943bd0279`.
 The workflow and script both reject changes to app source, public assets, entry
@@ -34,9 +40,13 @@ The original browser WebM is finalized by closing the context, then retained wit
 its hash, timestamped interaction/assertion events, source and harness identities,
 two raw synthetic ICS downloads, and ffprobe metadata. Failed partial takes are
 also retained, clearly marked failed; never present one as a completed demo.
-ffprobe must already be available in the runner image; absence fails preflight
-instead of silently installing another tool. Output creation rejects an existing
-take directory, preserving prior footage.
+An explicit step now updates the ephemeral runner's existing official Ubuntu
+package indexes and installs `ffmpeg` with `--no-install-recommends`, providing
+`ffprobe`, then checks its availability before proceeding. It adds no package
+repository, application/lockfile dependency, credential or repository permission;
+it does not install software on the user's computer. Installation or availability
+failure stops the job. Output creation rejects an existing take directory,
+preserving prior footage.
 
 Review must verify script selectors against the current UI, assertion coverage,
 network isolation, output allowlist, and scope before any dispatch. After an
