@@ -287,7 +287,7 @@ document.addEventListener('click', event => {
   }
   if (target.dataset.action === 'close') closeDialog();
   if (target.dataset.action === 'add') sourceDialog();
-  if (target.dataset.action === 'reset') confirmDialog({ title: 'Start with a clean slate?', description: 'This replaces the workspace saved in this browser, including changes from another tab, with an empty case. Your current source statements and clarifications will be removed. This cannot be undone.', actionLabel: 'Start fresh', destructive: true, action: () => {
+  if (target.dataset.action === 'reset') confirmDialog({ title: 'Start with a clean slate?', description: 'This replaces the workspace saved in this browser, including changes from another tab, with an empty case. Your current source statements, clarifications, and unapplied settings will be removed. This cannot be undone.', actionLabel: 'Start fresh', destructive: true, action: () => {
     settingsDraft = null;
     state = { version: 1, exampleId: null, modified: false, case: { title: '', localZone: state.case.localZone || 'UTC', bufferMinutes: 60, sources: [] } };
     persist({ replaceExisting: true }); render(); announce('Workspace cleared. Add your first source when you’re ready.'); document.querySelector('#workspace-title')?.focus();
