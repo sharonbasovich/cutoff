@@ -1,0 +1,59 @@
+name: Verify released timeline
+on:
+  push:
+    branches: [verify/timeline-live-20261101]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: b176e8c0e75c8a0a03764492cf2cfd6dc7e52b5d
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - run: ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Exercise public release in clean Chromium
+        run: |
+          node --input-type=module <<'JS'
+          import {chromium} from 'playwright';
+          import assert from 'node:assert/strict';
+          import {createHash} from 'node:crypto';
+          const browser=await chromium.launch();
+          const page=await browser.newPage({viewport:{width:390,height:844}});
+          const errors=[];page.on('pageerror',e=>errors.push(e.message));
+          const js=await page.request.get('https://sharonbasovich.github.io/cutoff/app.js');
+          assert.equal(js.ok(),true);
+          assert.equal(createHash('sha256').update(await js.body()).digest('hex'),'a85d86f2726ff37955f9d6cd1d3c93037f99ca9f852d627e2e12dee606909573');
+          await page.goto('https://sharonbasovich.github.io/cutoff/');
+          await page.locator('[data-example="disagreement"]').click();
+          if(await page.locator('#confirm-action').isVisible())await page.locator('#confirm-action').click();
+          assert.equal(await page.locator('.timeline-date').count(),0);
+          await page.locator('[data-edit="portal"]').click();
+          await page.locator('#source-date').fill('2026-11-01');
+          await page.locator('#source-time').fill('06:59');
+          await page.locator('#source-quote').fill('Synthetic comparison: November 1, 2026 at 06:59 UTC.');
+          await page.getByRole('button',{name:'Save source',exact:true}).click();
+          await page.locator('#display-zone').fill('UTC');
+          await page.getByRole('button',{name:'Apply settings',exact:true}).click();
+          assert.deepEqual(await page.locator('.timeline-date').allTextContents(),['Oct 31, 2026','Oct 31, 2026','Nov 1, 2026']);
+          assert.equal(await page.locator('#export-calendar').isDisabled(),true);
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+          await page.screenshot({path:'live-timeline-390.png',fullPage:true});
+          await page.reload();
+          assert.equal(await page.locator('.timeline-date').count(),3);
+          assert.deepEqual(errors,[]);
+          console.log('PASS: exact live JS hash, same-day compact, multi-day dates, export lock,390px nooverflow,reload,no pageerrors');
+          await browser.close();
+          JS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: cutoff-live-timeline
+          path: live-timeline-390.png
+          retention-days: 1
