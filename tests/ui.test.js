@@ -99,6 +99,46 @@ try {
     await page.screenshot({path:'evidence/desktop-conflict.png',fullPage:true});
   });
   await check('desktop automated accessibility',()=>axe(page,'desktop'));
+  await check('unapplied settings survive source saves and validation; only Apply changes the comparison', async()=>{
+    const draftPage = await context.newPage();await draftPage.goto(base);
+    const before = await draftPage.locator('.planning-card').textContent();
+    await draftPage.locator('#display-zone').fill('Asia/Tokyo');await draftPage.locator('#buffer-minutes').fill('120');
+    assert.match(await draftPage.locator('#settings-draft-status').textContent(), /Changes not applied/);
+    await draftPage.locator('[data-edit]').first().click();await draftPage.locator('#source-form button[type="submit"]').click();
+    assert.equal(await draftPage.locator('#display-zone').inputValue(), 'Asia/Tokyo');
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '120');
+    assert.equal(await draftPage.locator('.planning-card').textContent(), before);
+    const applied = (await stored(draftPage)).case;
+    assert.notEqual(applied.localZone, 'Asia/Tokyo');assert.notEqual(applied.bufferMinutes, 120);
+    await draftPage.locator('#buffer-minutes').fill('-1');await draftPage.locator('#settings-form button').click();
+    assert.match(await draftPage.locator('#settings-error').textContent(), /whole/);
+    await draftPage.locator('[data-edit]').first().click();await draftPage.locator('#source-form button[type="submit"]').click();
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '-1');
+    await draftPage.locator('#buffer-minutes').fill('120');
+    await draftPage.setViewportSize({width:390,height:844});await noOverflow(draftPage);
+    await draftPage.locator('#settings-form').scrollIntoViewIfNeeded();
+    await draftPage.screenshot({path:'evidence/mobile-pending-settings.png',fullPage:true});
+    await axe(draftPage, 'pending-settings');
+    await draftPage.locator('#settings-form button').click();
+    assert.equal((await stored(draftPage)).case.bufferMinutes, 120);
+    assert.equal((await stored(draftPage)).case.localZone, 'Asia/Tokyo');
+    assert.equal(await draftPage.locator('#settings-draft-status').textContent(), '');
+    await draftPage.locator('#buffer-minutes').fill('180');
+    await draftPage.locator('[data-example="gap"]').click();await draftPage.locator('#confirm-cancel').click();
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '180');
+    await draftPage.reload();assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '120');
+    await draftPage.locator('#buffer-minutes').fill('180');
+    await draftPage.locator('[data-example="gap"]').click();await draftPage.locator('#confirm-action').click();
+    assert.equal(await draftPage.locator('#settings-draft-status').textContent(), '');
+    await draftPage.locator('#buffer-minutes').fill('180');
+    await draftPage.locator('[data-action="reset"]').click();await draftPage.locator('#confirm-cancel').click();
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '180');
+    await draftPage.locator('[data-action="reset"]').click();await draftPage.locator('#confirm-action').click();
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '60');
+    assert.equal(await draftPage.locator('#settings-draft-status').textContent(), '');
+    await draftPage.close();await page.reload();
+  });
+
   await check('fold is unresolved until explicit occurrence and explanation; raw fields preserved',async()=>{
     await loadExample(page,'fold');assert.equal(await page.locator('.planning-card').count(),0);assert.equal(await exportButton(page).isDisabled(),true);
     const quote=await page.locator('blockquote').textContent();await page.locator('[data-resolve]').click();
@@ -201,3 +241,4 @@ try {
 } catch(error) {
   await writeFile('evidence/ui-failure.txt',`${String(error.stack||error)}\n\nFocus trace (synthetic test controls only):\n${JSON.stringify(focusTrace,null,2)}`);throw error;
 } finally {await browser?.close();server.kill('SIGTERM');}
+

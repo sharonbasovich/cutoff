@@ -492,3 +492,73 @@ test('review: failed explicit reset retains a visible storage warning and never 
   assert.match(h.nodes.get('#app').innerHTML, /could not save/);
   assert.match(h.nodes.get('#app').innerHTML, /Not saved/);
 });
+
+
+function pendingSettings(h, zone = 'Asia/Tokyo', buffer = '120') {
+  const form = { elements: { localZone: { value: zone, focus() {} }, bufferMinutes: { value: buffer, focus() {} } }, querySelector: () => ({ textContent: '' }) };
+  h.nodes.set('#settings-form', form);
+  h.nodes.set('#settings-draft-status', { textContent: '' });
+  for (const listener of h.listeners.input) listener({ target: { id: 'display-zone' } });
+  return form;
+}
+test('settings draft: unrelated rerender preserves fields without changing calculation or storage', () => {
+  const initial = stateFrom();
+  const h = harness({ stored: JSON.stringify(initial) });
+  pendingSettings(h);
+  h.evaluate('update("Source updated")');
+  const html = h.nodes.get('#app').innerHTML;
+  assert.match(html, /id="display-zone"[^>]*value="Asia\/Tokyo"/);
+  assert.match(html, /id="buffer-minutes"[^>]*value="120"/);
+  assert.match(html, /Changes not applied/);
+  assert.equal(h.evaluate('state.case.localZone'), initial.case.localZone);
+  assert.equal(JSON.parse(h.stored()).case.bufferMinutes, initial.case.bufferMinutes);
+  assert.equal(h.evaluate('getAnalysis().bufferMinutes'), initial.case.bufferMinutes);
+  assert.equal(JSON.parse(h.stored()).settingsDraft, undefined);
+});
+test('settings draft: failed validation retains draft; Apply commits and clears it', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  const form = pendingSettings(h, 'CST', '120');
+  form.id = 'settings-form';
+  for (const listener of h.listeners.submit) listener({ target: form, preventDefault() {} });
+  assert.equal(h.evaluate('settingsDraft.localZone'), 'CST');
+  assert.equal(h.writes.length, 0);
+  form.elements.localZone.value = 'Asia/Tokyo';
+  for (const listener of h.listeners.input) listener({ target: { id: 'display-zone' } });
+  for (const listener of h.listeners.submit) listener({ target: form, preventDefault() {} });
+  assert.equal(h.evaluate('settingsDraft'), null);
+  assert.equal(JSON.parse(h.stored()).case.localZone, 'Asia/Tokyo');
+  assert.equal(JSON.parse(h.stored()).case.bufferMinutes, 120);
+});
+test('settings draft: returning both fields to applied values clears status', () => {
+  const initial = stateFrom();const h = harness({ stored: JSON.stringify(initial) });
+  pendingSettings(h);
+  pendingSettings(h, initial.case.localZone, String(initial.case.bufferMinutes));
+  assert.equal(h.evaluate('settingsDraft'), null);
+  assert.equal(h.nodes.get('#settings-draft-status').textContent, '');
+});
+test('settings draft: example replacement confirms even an otherwise untouched example', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });pendingSettings(h);
+  h.evaluate('confirmDialog = options => { globalThis.pendingConfirm = options; }; loadExample("gap")');
+  assert.ok(h.sandbox.pendingConfirm);
+  assert.equal(h.evaluate('settingsDraft.localZone'), 'Asia/Tokyo', 'Cancel leaves draft intact');
+  h.sandbox.pendingConfirm.action();
+  assert.equal(h.evaluate('settingsDraft'), null);
+  assert.equal(h.evaluate('state.exampleId'), 'gap');
+});
+test('settings draft: reset confirmation clears draft, reload never silently applies it', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });pendingSettings(h);
+  const reloaded = harness({ stored: h.stored() });
+  assert.equal(reloaded.evaluate('settingsDraft'), null);
+  h.evaluate('confirmDialog = options => { globalThis.pendingConfirm = options; }');
+  for (const listener of h.listeners.click) listener({ target: { closest: () => ({ dataset: { action: 'reset' } }) } });
+  assert.notEqual(h.evaluate('settingsDraft'), null);
+  h.sandbox.pendingConfirm.action();
+  assert.equal(h.evaluate('settingsDraft'), null);
+  assert.equal(h.evaluate('state.case.sources.length'), 0);
+});
+test('settings draft: persisted display-zone text is escaped in pending status', () => {
+  const initial = stateFrom();initial.case.localZone = '<img src=x onerror=alert(1)>';
+  const h = harness({ stored: JSON.stringify(initial) });pendingSettings(h);h.evaluate('render()');
+  assert.doesNotMatch(h.nodes.get('#app').innerHTML, /<img src=x/);
+  assert.match(h.nodes.get('#app').innerHTML, /&lt;img src=x/);
+});

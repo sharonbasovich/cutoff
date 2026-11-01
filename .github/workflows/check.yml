@@ -58,9 +58,12 @@ jobs:
             evidence/mobile-agreement.png
             evidence/mobile-source-dialog.png
             evidence/mobile-320.png
+            evidence/mobile-pending-settings.png
+            evidence/axe-pending-settings.json
             evidence/axe-desktop.json
             evidence/axe-modal.json
             evidence/axe-mobile.json
             evidence/ui-results.json
             evidence/ui-failure.txt
             evidence/export-example.ics
+

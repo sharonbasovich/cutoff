@@ -17,3 +17,8 @@
 @media(max-width:360px){.planning-date{font-size:22px}.planning-time{font-size:24px}.planning-label{font-size:10px}.planning-zone{font-size:11px}.source-facts strong{font-size:14px}.source-facts strong>span{font-size:14px}.dialog-footer>div{width:100%;justify-content:flex-end}.dialog-footer .button{padding-left:10px;padding-right:10px}.source-header{grid-template-columns:25px minmax(0,1fr) 44px;gap:4px 7px}.source-index{width:25px;font-size:11px}.source-heading h3{font-size:13px}.source-status{font-size:11px}.example-button{flex-basis:100%}.timeline-legend{flex-wrap:wrap}.timeline-legend>div{max-width:none;flex-basis:44%}}
 .source-limit,.zone-change-notice{font-size:12px;line-height:1.8;background:#edf0e6;border:1px solid #cdd6bf;padding:11px 14px;border-radius:5px;margin:15px 0;color:#4e5e40}.choice-fieldset:disabled{opacity:.6}.zone-change-notice[hidden]{display:none}
 #verdict-title:focus-visible{outline:3px solid var(--blue);outline-offset:5px;border-radius:2px}
+
+
+/* Pending settings describe both fields, including in the mobile grid. */
+#settings-draft-status{grid-column:1/-1}
+#settings-draft-status:empty{margin:0}
