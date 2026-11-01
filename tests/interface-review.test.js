@@ -562,3 +562,41 @@ test('settings draft: persisted display-zone text is escaped in pending status',
   assert.doesNotMatch(h.nodes.get('#app').innerHTML, /<img src=x/);
   assert.match(h.nodes.get('#app').innerHTML, /&lt;img src=x/);
 });
+
+
+test('interface: timeline dates disambiguate different days and preserve same-day compactness', () => {
+  const data = stateFrom();
+  data.case.localZone = 'UTC'; data.case.bufferMinutes = 60;
+  data.case.sources = ['2026-12-31', '2027-01-01'].map((date, index) => ({ id: `day-${index}`, label: `Source ${index + 1}`, quote: 'Synthetic deadline', date, time: '12:00', zone: 'UTC' }));
+  const h = harness({ stored: JSON.stringify(data) });
+  let html = h.evaluate('renderTimeline()');
+  assert.match(html, /timeline-date">Dec 31, 2026/);
+  assert.match(html, /timeline-date">Jan 1, 2027/);
+  assert.equal((html.match(/class="timeline-date"/g) || []).length, 3);
+  h.evaluate("state.case.sources[1].date = '2026-12-31'; render()");
+  assert.doesNotMatch(h.evaluate('renderTimeline()'), /timeline-date/);
+});
+
+test('interface: timeline dates follow display zone and include the planning target', () => {
+  const data = stateFrom();
+  data.case.localZone = 'UTC'; data.case.bufferMinutes = 60;
+  data.case.sources = [{ id: 'midnight', label: 'Midnight source', quote: 'Synthetic deadline', date: '2027-01-01', time: '00:30', zone: 'UTC' }];
+  const h = harness({ stored: JSON.stringify(data) });
+  assert.match(h.evaluate('renderTimeline()'), /timeline-date">Dec 31, 2026/);
+  assert.match(h.evaluate('renderTimeline()'), /timeline-date">Jan 1, 2027/);
+  h.evaluate("state.case.localZone = 'America/New_York'; render()");
+  assert.doesNotMatch(h.evaluate('renderTimeline()'), /timeline-date/);
+  h.evaluate("state.case.bufferMinutes = 0; state.case.localZone = 'UTC'; render()");
+  assert.doesNotMatch(h.evaluate('renderTimeline()'), /timeline-date/);
+});
+
+test('interface: partially unresolved timeline dates describe only resolved instants', () => {
+  const data = stateFrom(); data.case.localZone = 'UTC';
+  data.case.sources = ['2026-12-31', '2027-01-01', '2027-01-02'].map((date, index) => ({ id: `day-${index}`, label: `Source ${index + 1}`, quote: 'Synthetic deadline', date, time: '12:00', zone: index === 2 ? '' : 'UTC' }));
+  const h = harness({ stored: JSON.stringify(data) });
+  const html = h.evaluate('renderTimeline()');
+  assert.equal(h.evaluate('analysis.status'), 'blocked');
+  assert.equal((html.match(/class="timeline-date"/g) || []).length, 2);
+  assert.doesNotMatch(html, /Jan 2|Your planning target/);
+  assert.match(html, /Only resolved sources/);
+});

@@ -22,3 +22,7 @@
 /* Pending settings describe both fields, including in the mobile grid. */
 #settings-draft-status{grid-column:1/-1}
 #settings-draft-status:empty{margin:0}
+
+
+/* Keep day context beside a clock time when the timeline crosses dates. */
+.timeline-legend .timeline-date{color:var(--ink);font-size:11px;line-height:1.5;margin:3px 0 2px;font-variant-numeric:tabular-nums}
