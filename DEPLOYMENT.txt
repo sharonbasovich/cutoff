@@ -1,17 +1,8 @@
-Cutoff static demo
-Source commit: 75892892b0045692e1c966cef792393943bd0279
-Built from exact git archive bytes with locked npm dependencies.
-Build environment: Node.js 22.14.0, esbuild 0.25.11, Windows.
-Local canonical source: 85 Node tests passed; production build passed.
-Hosted source verification: https://github.com/sharonbasovich/cutoff/actions/runs/39615501504
-Hosted CI: 85 Node tests, build and 18 Chromium groups passed.
-
-SHA-256
-d5d879e2e0f491907d6d29309912320660fb97b9dfb21c53ad790640099db3a1  app.css
-109c9b89b8d10693e9a19c2900b757a31364e63d9949592f6eab43f090defc06  app.css.map
-1e9149c90a90d2a22897e2ae7a4b1605da8f088a573895b240ed61c5a7531692  app.js
-0a2a9049869fed3e49e35a4899b0f9f79d4415f623bd4e180726aac5ec7479d7  app.js.map
-c0916576e317abfb728dc4eb6a12d74b96e7822995b09fe9b2c77d713bbdc05f  favicon.svg
-b6fff09623b65fe07972d00baedceaedcaba45cef3fbd3d8c3723558de5ddce6  index.html
-cbde67c81f263d4f7513b588b2076a54064d8591970e11e31427cafb134130f7  LICENSE.txt
-be5d244efce7de0c6fb9fdefd306bb84e91f573bdccc6bf479e795a494982097  THIRD_PARTY_NOTICES.txt
+Cutoff deployment — 2026-11-01
+Source: eec7c6dbf51cd12a1562c1a23b347bdfc62a19c9
+Reviewed PR head: 6859530756ecaddb7f3201e25fa3d0be2ad270ce
+PR: https://github.com/sharonbasovich/cutoff/pull/5
+Main verification: https://github.com/sharonbasovich/cutoff/actions/runs/41274221723
+91 Node tests, production build and 19 Chromium check groups passed.
+Unapplied display-zone and planning-buffer edits survive source rerenders; calculations keep applied settings until Apply.
+Calendar comparison model unchanged. Existing evidence documentation retains historical verification limits.

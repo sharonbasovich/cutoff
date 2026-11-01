@@ -99,6 +99,46 @@ try {
     await page.screenshot({path:'evidence/desktop-conflict.png',fullPage:true});
   });
   await check('desktop automated accessibility',()=>axe(page,'desktop'));
+  await check('unapplied settings survive source saves and validation; only Apply changes the comparison', async()=>{
+    const draftPage = await context.newPage();await draftPage.goto(base);
+    const before = await draftPage.locator('.planning-card').textContent();
+    await draftPage.locator('#display-zone').fill('Asia/Tokyo');await draftPage.locator('#buffer-minutes').fill('120');
+    assert.match(await draftPage.locator('#settings-draft-status').textContent(), /Changes not applied/);
+    await draftPage.locator('[data-edit]').first().click();await draftPage.locator('#source-form button[type="submit"]').click();
+    assert.equal(await draftPage.locator('#display-zone').inputValue(), 'Asia/Tokyo');
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '120');
+    assert.equal(await draftPage.locator('.planning-card').textContent(), before);
+    const applied = (await stored(draftPage)).case;
+    assert.notEqual(applied.localZone, 'Asia/Tokyo');assert.notEqual(applied.bufferMinutes, 120);
+    await draftPage.locator('#buffer-minutes').fill('-1');await draftPage.locator('#settings-form button').click();
+    assert.match(await draftPage.locator('#settings-error').textContent(), /whole/);
+    await draftPage.locator('[data-edit]').first().click();await draftPage.locator('#source-form button[type="submit"]').click();
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '-1');
+    await draftPage.locator('#buffer-minutes').fill('120');
+    await draftPage.setViewportSize({width:390,height:844});await noOverflow(draftPage);
+    await draftPage.locator('#settings-form').scrollIntoViewIfNeeded();
+    await draftPage.screenshot({path:'evidence/mobile-pending-settings.png',fullPage:true});
+    await axe(draftPage, 'pending-settings');
+    await draftPage.locator('#settings-form button').click();
+    assert.equal((await stored(draftPage)).case.bufferMinutes, 120);
+    assert.equal((await stored(draftPage)).case.localZone, 'Asia/Tokyo');
+    assert.equal(await draftPage.locator('#settings-draft-status').textContent(), '');
+    await draftPage.locator('#buffer-minutes').fill('180');
+    await draftPage.locator('[data-example="gap"]').click();await draftPage.locator('#confirm-cancel').click();
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '180');
+    await draftPage.reload();assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '120');
+    await draftPage.locator('#buffer-minutes').fill('180');
+    await draftPage.locator('[data-example="gap"]').click();await draftPage.locator('#confirm-action').click();
+    assert.equal(await draftPage.locator('#settings-draft-status').textContent(), '');
+    await draftPage.locator('#buffer-minutes').fill('180');
+    await draftPage.locator('[data-action="reset"]').click();await draftPage.locator('#confirm-cancel').click();
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '180');
+    await draftPage.locator('[data-action="reset"]').click();await draftPage.locator('#confirm-action').click();
+    assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '60');
+    assert.equal(await draftPage.locator('#settings-draft-status').textContent(), '');
+    await draftPage.close();await page.reload();
+  });
+
   await check('fold is unresolved until explicit occurrence and explanation; raw fields preserved',async()=>{
     await loadExample(page,'fold');assert.equal(await page.locator('.planning-card').count(),0);assert.equal(await exportButton(page).isDisabled(),true);
     const quote=await page.locator('blockquote').textContent();await page.locator('[data-resolve]').click();
@@ -167,9 +207,38 @@ try {
   await check('write-blocked storage remains usable and reports unsaved changes',async()=>{
     const blocked=await browser.newContext();await blocked.addInitScript(()=>{Storage.prototype.setItem=function(){throw new DOMException('Storage blocked','QuotaExceededError');};});const p=await blocked.newPage();await p.goto(base);await p.locator('#display-zone').fill('Asia/Tokyo');await p.locator('#settings-form button').click();assert.match(await p.locator('.storage-warning').textContent(),/could not save/);assert.equal(await p.locator('.source-card').count(),2);await blocked.close();
   });
+  await check('stale tabs cannot overwrite newer work; cancellation, export and explicit reset remain usable',async()=>{
+    const tabs=await browser.newContext({acceptDownloads:true});
+    try {
+      const a=await tabs.newPage();a.setDefaultTimeout(4000);a.on('pageerror',e=>consoleErrors.push(e.message));
+      await a.goto(base);await loadExample(a,'agreement');
+      const b=await tabs.newPage();b.setDefaultTimeout(4000);b.on('pageerror',e=>consoleErrors.push(e.message));await b.goto(base);
+      await b.locator('#workspace-title').fill('Newer saved case');await b.locator('#display-zone').focus();
+      await a.locator('#workspace-title').fill('Retained local case');await a.locator('#display-zone').focus();
+      assert.match(await a.locator('.storage-warning').textContent(),/changed outside this tab/);
+      assert.equal((await stored(a)).case.title,'Newer saved case');
+      assert.equal(await a.locator('#workspace-title').inputValue(),'Retained local case');
+      await a.locator('[data-action="reset"]').click();await a.locator('#confirm-cancel').click();
+      assert.equal((await stored(a)).case.title,'Newer saved case');
+      assert.equal(await a.locator('#workspace-title').inputValue(),'Retained local case');
+      const pending=a.waitForEvent('download');await exportButton(a).click();const download=await pending;
+      const calendar=await readFile(await download.path(),'utf8');
+      assert.match(calendar,/SUMMARY:Planning target: Retained local case/);
+      assert.equal((await stored(a)).case.title,'Newer saved case','Export must not overwrite storage');
+      await a.locator('[data-action="reset"]').click();assert.match(await a.locator('#dialog-description').textContent(),/including changes from another tab/);await a.locator('#confirm-action').click();
+      assert.equal((await stored(a)).case.sources.length,0);assert.equal(await a.locator('.storage-warning').count(),0);
+      await a.locator('#workspace-title').fill('New empty case');await a.locator('#display-zone').focus();
+      assert.equal((await stored(a)).case.title,'New empty case');
+      await b.locator('#workspace-title').fill('Stale after reset');await b.locator('#display-zone').focus();
+      assert.match(await b.locator('.storage-warning').textContent(),/changed outside this tab/);
+      assert.equal((await stored(b)).case.title,'New empty case');
+      await b.reload();assert.equal(await b.locator('#workspace-title').inputValue(),'New empty case');assert.equal(await b.locator('.storage-warning').count(),0);
+    } finally { await tabs.close(); }
+  });
   await check('no unhandled browser exceptions or outbound app requests',async()=>{assert.deepEqual(consoleErrors,[]);assert.deepEqual(remoteRequests,[]);});
   await writeFile('evidence/ui-results.json',JSON.stringify({testedAt:new Date().toISOString(),browser:await browser.version(),viewportWidths:[1440,390,320],results,consoleErrors,remoteRequests,focusTrace},null,2));
   console.log(`\n${results.length} browser checks passed.`);
 } catch(error) {
   await writeFile('evidence/ui-failure.txt',`${String(error.stack||error)}\n\nFocus trace (synthetic test controls only):\n${JSON.stringify(focusTrace,null,2)}`);throw error;
 } finally {await browser?.close();server.kill('SIGTERM');}
+

@@ -35,7 +35,7 @@ function harness({ stored = null, readBlocked = false, writeBlocked = false } = 
     FormData: class { constructor(form) { this.data = form.data; } *[Symbol.iterator]() { yield* Object.entries(this.data); } },
   });
   vm.runInContext(source, sandbox, { filename: 'src/app.js' });
-  return { sandbox, writes, listeners, nodes, evaluate: text => vm.runInContext(text, sandbox), stored: () => stored };
+  return { sandbox, writes, listeners, nodes, evaluate: text => vm.runInContext(text, sandbox), stored: () => stored, externalWrite: value => { stored = value; } };
 }
 test('interface: render escapes source text and limits links to HTTP(S)', () => {
   const data = stateFrom();
@@ -401,4 +401,164 @@ test('interface: save-state text retains at least 5:1 contrast on desktop and mo
     const ratio = declaredColorContrast(foreground, background);
     assert.ok(ratio >= 5, `Save-state ${name} contrast ${ratio.toFixed(2)}:1 must retain margin above 4.5:1`);
   }
+});
+
+
+test('interface: stale tabs preserve newer saved data and keep their own edits in memory', () => {
+  const original = JSON.stringify(stateFrom());
+  const newer = stateFrom(); newer.case.title = 'Saved by tab B';
+  const h = harness({ stored: original });
+  h.externalWrite(JSON.stringify(newer));
+  h.evaluate('state.case.title = "Unsaved tab A edit"; persist(); render()');
+  assert.equal(h.writes.length, 0);
+  assert.equal(JSON.parse(h.stored()).case.title, 'Saved by tab B');
+  assert.equal(h.evaluate('state.case.title'), 'Unsaved tab A edit');
+  assert.match(h.nodes.get('#app').innerHTML, /changed outside this tab/);
+  assert.match(h.nodes.get('#app').innerHTML, /Not saved/);
+  h.evaluate('persist()');
+  assert.equal(h.writes.length, 0, 'Repeated edits remain blocked');
+});
+
+test('interface: storage removal, corruption, and new data in another fresh tab block stale writes', () => {
+  const original = JSON.stringify(stateFrom());
+  for (const [initial, external] of [[original, null], [original, '{broken'], [null, original]]) {
+    const h = harness({ stored: initial });
+    h.externalWrite(external);
+    h.evaluate('state.case.title = "Local edit"; persist(); render()');
+    assert.equal(h.writes.length, 0);
+    assert.equal(h.stored(), external);
+    assert.match(h.nodes.get('#app').innerHTML, /changed outside this tab/);
+  }
+});
+
+test('interface: own consecutive saves advance the snapshot without false conflicts', () => {
+  for (const initial of [null, JSON.stringify(stateFrom())]) {
+    const h = harness({ stored: initial });
+    h.evaluate('state.case.title = "First"; persist(); state.case.title = "Second"; persist(); render()');
+    assert.equal(h.writes.length, 2);
+    assert.equal(JSON.parse(h.stored()).case.title, 'Second');
+    assert.doesNotMatch(h.nodes.get('#app').innerHTML, /Not saved/);
+  }
+});
+
+test('review: stale-save conflict preserves in-memory calendar export without replacing saved evidence', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  const external = JSON.stringify({ ...stateFrom(), modified: true });
+  h.externalWrite(external);
+  h.evaluate('state.case.title = "Local planning evidence"; persist(); render()');
+  assert.equal(h.evaluate('getAnalysis().canExport'), true);
+  const calendar = h.evaluate('exportCalendar(state.case)');
+  assert.match(calendar, /SUMMARY:Planning target: Local planning evidence/);
+  assert.equal(h.stored(), external);
+  assert.equal(h.writes.length, 0);
+});
+
+test('review: a read failure during save preserves memory and does not attempt a write', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  h.sandbox.localStorage.getItem = () => { throw new Error('Storage became inaccessible'); };
+  h.evaluate('state.case.title = "Retained edit"; persist(); render()');
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.evaluate('state.case.title'), 'Retained edit');
+  assert.match(h.nodes.get('#app').innerHTML, /could not save/);
+});
+
+test('review: Start fresh is explicit, cancellation preserves both cases, and confirmation resumes saves', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  const external = JSON.stringify({ ...stateFrom(), modified: true });
+  h.externalWrite(external);
+  h.evaluate('state.case.title = "Retained local edit"; persist(); render()');
+  h.evaluate('confirmDialog = options => { globalThis.pendingConfirm = options; }');
+  const target = { dataset: { action: 'reset' } };
+  for (const listener of h.listeners.click) listener({ target: { closest: () => target } });
+  assert.match(h.sandbox.pendingConfirm.description, /including changes from another tab/);
+  assert.equal(h.sandbox.pendingConfirm.destructive, true);
+  assert.equal(h.stored(), external, 'Opening or cancelling the confirmation cannot reset storage');
+  assert.equal(h.evaluate('state.case.title'), 'Retained local edit');
+  assert.equal(h.writes.length, 0);
+  h.sandbox.pendingConfirm.action();
+  assert.equal(h.writes.length, 1);
+  assert.equal(JSON.parse(h.stored()).case.sources.length, 0);
+  assert.equal(h.evaluate('storageError'), '');
+  h.evaluate('state.case.title = "New case"; persist(); render()');
+  assert.equal(h.writes.length, 2);
+  assert.equal(JSON.parse(h.stored()).case.title, 'New case');
+});
+
+test('review: failed explicit reset retains a visible storage warning and never claims a save', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()), writeBlocked: true });
+  h.evaluate('persist({ replaceExisting: true }); render()');
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.evaluate('saved'), false);
+  assert.match(h.nodes.get('#app').innerHTML, /could not save/);
+  assert.match(h.nodes.get('#app').innerHTML, /Not saved/);
+});
+
+
+function pendingSettings(h, zone = 'Asia/Tokyo', buffer = '120') {
+  const form = { elements: { localZone: { value: zone, focus() {} }, bufferMinutes: { value: buffer, focus() {} } }, querySelector: () => ({ textContent: '' }) };
+  h.nodes.set('#settings-form', form);
+  h.nodes.set('#settings-draft-status', { textContent: '' });
+  for (const listener of h.listeners.input) listener({ target: { id: 'display-zone' } });
+  return form;
+}
+test('settings draft: unrelated rerender preserves fields without changing calculation or storage', () => {
+  const initial = stateFrom();
+  const h = harness({ stored: JSON.stringify(initial) });
+  pendingSettings(h);
+  h.evaluate('update("Source updated")');
+  const html = h.nodes.get('#app').innerHTML;
+  assert.match(html, /id="display-zone"[^>]*value="Asia\/Tokyo"/);
+  assert.match(html, /id="buffer-minutes"[^>]*value="120"/);
+  assert.match(html, /Changes not applied/);
+  assert.equal(h.evaluate('state.case.localZone'), initial.case.localZone);
+  assert.equal(JSON.parse(h.stored()).case.bufferMinutes, initial.case.bufferMinutes);
+  assert.equal(h.evaluate('getAnalysis().bufferMinutes'), initial.case.bufferMinutes);
+  assert.equal(JSON.parse(h.stored()).settingsDraft, undefined);
+});
+test('settings draft: failed validation retains draft; Apply commits and clears it', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  const form = pendingSettings(h, 'CST', '120');
+  form.id = 'settings-form';
+  for (const listener of h.listeners.submit) listener({ target: form, preventDefault() {} });
+  assert.equal(h.evaluate('settingsDraft.localZone'), 'CST');
+  assert.equal(h.writes.length, 0);
+  form.elements.localZone.value = 'Asia/Tokyo';
+  for (const listener of h.listeners.input) listener({ target: { id: 'display-zone' } });
+  for (const listener of h.listeners.submit) listener({ target: form, preventDefault() {} });
+  assert.equal(h.evaluate('settingsDraft'), null);
+  assert.equal(JSON.parse(h.stored()).case.localZone, 'Asia/Tokyo');
+  assert.equal(JSON.parse(h.stored()).case.bufferMinutes, 120);
+});
+test('settings draft: returning both fields to applied values clears status', () => {
+  const initial = stateFrom();const h = harness({ stored: JSON.stringify(initial) });
+  pendingSettings(h);
+  pendingSettings(h, initial.case.localZone, String(initial.case.bufferMinutes));
+  assert.equal(h.evaluate('settingsDraft'), null);
+  assert.equal(h.nodes.get('#settings-draft-status').textContent, '');
+});
+test('settings draft: example replacement confirms even an otherwise untouched example', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });pendingSettings(h);
+  h.evaluate('confirmDialog = options => { globalThis.pendingConfirm = options; }; loadExample("gap")');
+  assert.ok(h.sandbox.pendingConfirm);
+  assert.equal(h.evaluate('settingsDraft.localZone'), 'Asia/Tokyo', 'Cancel leaves draft intact');
+  h.sandbox.pendingConfirm.action();
+  assert.equal(h.evaluate('settingsDraft'), null);
+  assert.equal(h.evaluate('state.exampleId'), 'gap');
+});
+test('settings draft: reset confirmation clears draft, reload never silently applies it', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });pendingSettings(h);
+  const reloaded = harness({ stored: h.stored() });
+  assert.equal(reloaded.evaluate('settingsDraft'), null);
+  h.evaluate('confirmDialog = options => { globalThis.pendingConfirm = options; }');
+  for (const listener of h.listeners.click) listener({ target: { closest: () => ({ dataset: { action: 'reset' } }) } });
+  assert.notEqual(h.evaluate('settingsDraft'), null);
+  h.sandbox.pendingConfirm.action();
+  assert.equal(h.evaluate('settingsDraft'), null);
+  assert.equal(h.evaluate('state.case.sources.length'), 0);
+});
+test('settings draft: persisted display-zone text is escaped in pending status', () => {
+  const initial = stateFrom();initial.case.localZone = '<img src=x onerror=alert(1)>';
+  const h = harness({ stored: JSON.stringify(initial) });pendingSettings(h);h.evaluate('render()');
+  assert.doesNotMatch(h.nodes.get('#app').innerHTML, /<img src=x/);
+  assert.match(h.nodes.get('#app').innerHTML, /&lt;img src=x/);
 });

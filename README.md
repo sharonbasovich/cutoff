@@ -50,7 +50,7 @@ The GitHub Actions workflow runs on pushes and pull requests to `main`, and can 
 
 The app has no accounts, analytics, tracking, paid APIs or remote data fetches. Assets are self-hosted; the page's Content Security Policy disables app network connections. The tested browser flows produced no observed outbound app requests. Following a source link opens that external site.
 
-Workspace data is saved in this browser's local storage. It is not encrypted, synchronized or backed up; anyone with access to the browser profile may be able to read it. Storage can be blocked or cleared. The hosting page must be available when loading the app.
+Workspace data is saved in this browser's local storage. Unapplied display-zone and buffer edits remain in the current tab through source changes; the comparison keeps using the last applied settings. Apply them before reloading or closing the page. Loading another example or starting fresh explicitly discards those drafts. It is not encrypted, synchronized or backed up; anyone with access to the browser profile may be able to read it. Storage can be blocked or cleared. The hosting page must be available when loading the app.
 
 Cutoff does not fetch or verify source websites, parse prose, validate transcription against a quote, or decide which source is authoritative. All bundled examples and test fixtures are synthetic, with illustrative `example.com` links. Time-zone conversions depend on the runtime's time-zone database. Confirm consequential deadlines with the organizer.
 
@@ -66,3 +66,4 @@ MIT; see [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.tx
 - [Temporal polyfill](https://github.com/js-temporal/temporal-polyfill)
 - [iCalendar RFC 5545](https://www.rfc-editor.org/rfc/rfc5545)
 - [Playwright browser installation](https://playwright.dev/docs/browsers)
+

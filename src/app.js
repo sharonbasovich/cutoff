@@ -12,8 +12,11 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 let storageError = '';
 let saved = true;
+let storageSnapshot = null;
 let state = load();
 let analysis;
+// Unapplied settings stay in this tab until Apply or an intentional case change.
+let settingsDraft = null;
 
 const paths = {
   arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
@@ -35,6 +38,7 @@ function initialState() { return { version: 1, exampleId: 'disagreement', modifi
 function load() {
   try {
     const stored = localStorage.getItem(KEY);
+    storageSnapshot = stored;
     if (!stored) { saved = false; return initialState(); }
     const parsed = JSON.parse(stored);
     if (!validState(parsed)) throw new Error('invalid');
@@ -45,9 +49,22 @@ function load() {
     return initialState();
   }
 }
-function persist() {
-  if (storageError) return;
-  try { localStorage.setItem(KEY, JSON.stringify(state)); saved = true; }
+function persist({ replaceExisting = false } = {}) {
+  if (storageError && !replaceExisting) return;
+  try {
+    // Compare the bytes this tab last read/wrote before replacing shared storage.
+    // This is a stale-write guard, not an atomic multi-tab locking protocol.
+    if (!replaceExisting && localStorage.getItem(KEY) !== storageSnapshot) {
+      storageError = 'The saved workspace changed outside this tab. Your edits remain here, but are not saved. Reload to use the saved version (discarding these edits), or use Start fresh only if you intend to replace the saved workspace with an empty case.';
+      saved = false;
+      return;
+    }
+    const serialized = JSON.stringify(state);
+    localStorage.setItem(KEY, serialized);
+    storageSnapshot = serialized;
+    storageError = '';
+    saved = true;
+  }
   catch { storageError = 'This browser could not save your workspace. You can keep working, but changes may be lost when this page closes.'; saved = false; }
 }
 function announce(message) { document.querySelector('#announcer').textContent = message; }
@@ -75,6 +92,7 @@ function zoneOptions() { return `<datalist id="zone-options">${zones.map(z => `<
 function render() {
   analysis = getAnalysis();
   const sources = state.case.sources;
+  const settings = settingsDraft || state.case;
   const resolvedCount = analysis.results.filter(r => r.status === 'resolved').length;
   const unresolvedCount = sources.length - resolvedCount;
   const statusLabels = { empty: 'Start with a source', blocked: 'A little clarity needed', conflict: 'The sources disagree', agreement: 'The times line up' };
@@ -90,7 +108,7 @@ function render() {
       <div class="workbench">
         <aside class="sidebar" aria-label="Workspace settings and examples">
           <div class="sidebar-section case-section"><div class="section-eyebrow"><span>01</span> YOUR CASE</div><label class="field-label" for="workspace-title">Case name</label><input id="workspace-title" class="workspace-title" type="text" maxlength="120" value="${escape(state.case.title)}" placeholder="Give this deadline a name"><div class="save-state">${icon(storageError ? 'warning' : 'check')}<span>${storageError ? 'Not saved' : saved ? 'Saved in this browser' : 'Browser-only workspace'}</span></div></div>
-          <form id="settings-form" class="sidebar-section" novalidate><div class="section-eyebrow"><span>02</span> YOUR PERSPECTIVE</div><label class="field-label" for="display-zone">Display time zone</label><input id="display-zone" name="localZone" list="zone-options" value="${escape(state.case.localZone)}" required aria-describedby="zone-hint"><p class="field-hint" id="zone-hint">IANA zone, UTC, or ±HH:MM</p><label class="field-label buffer-label" for="buffer-minutes">Planning buffer</label><div class="unit-input"><input id="buffer-minutes" name="bufferMinutes" type="number" min="0" max="10080" step="1" value="${escape(state.case.bufferMinutes)}" required><span>minutes</span></div><p class="field-hint">Time to leave before the earliest source.</p><p class="field-error" id="settings-error" role="alert"></p><button class="button button-small button-outline full-width" type="submit">Apply settings ${icon('arrow')}</button></form>
+          <form id="settings-form" class="sidebar-section" novalidate><div class="section-eyebrow"><span>02</span> YOUR PERSPECTIVE</div><label class="field-label" for="display-zone">Display time zone</label><input id="display-zone" name="localZone" list="zone-options" value="${escape(settings.localZone)}" required aria-describedby="zone-hint settings-draft-status"><p class="field-hint" id="zone-hint">IANA zone, UTC, or ±HH:MM</p><label class="field-label buffer-label" for="buffer-minutes">Planning buffer</label><div class="unit-input"><input id="buffer-minutes" name="bufferMinutes" type="number" min="0" max="10080" step="1" value="${escape(settings.bufferMinutes)}" required aria-describedby="settings-draft-status"><span>minutes</span></div><p class="field-hint">Time to leave before the earliest source.</p><p class="field-hint" id="settings-draft-status" role="status">${settingsDraft ? escape(settingsDraftMessage()) : ''}</p><p class="field-error" id="settings-error" role="alert"></p><button class="button button-small button-outline full-width" type="submit">Apply settings ${icon('arrow')}</button></form>
           <div class="sidebar-section examples-section"><div class="section-eyebrow"><span>03</span> TRY AN EDGE CASE</div><div class="example-list">${examples.map((example, i) => `<button class="example-button ${state.exampleId === example.id && !state.modified ? 'is-active' : ''}" data-example="${example.id}" aria-pressed="${state.exampleId === example.id && !state.modified}"><span class="example-number">0${i + 1}</span><span><strong>${escape(example.name)}</strong><small>${escape(example.description)}</small></span>${icon('arrow')}</button>`).join('')}</div><p class="sidebar-footnote">All examples are synthetic.<br>No live pages are fetched or verified.</p></div>
         </aside>
         <div class="main-column">
@@ -103,6 +121,9 @@ function render() {
       </div>
     </main>
     <footer><span class="footer-brand">cutoff.</span><span>A little less uncertainty. A little more time.</span><span>No account. No tracking. On your device.</span></footer>${zoneOptions()}`;
+}
+function settingsDraftMessage() {
+  return `Changes not applied. Comparison still uses ${state.case.localZone} and a ${state.case.bufferMinutes}-minute buffer. Apply settings to use these changes.`;
 }
 function verdictText(resolvedCount, unresolvedCount) {
   if (analysis.status === 'empty') return 'Add a source statement to compare the time it means, wherever you are.';
@@ -248,8 +269,8 @@ function validZone(value) {
 function loadExample(id) {
   const example = examples.find(e => e.id === id);
   if (!example) return;
-  const action = () => { state = { version: 1, exampleId: id, modified: false, case: clone(example.case) }; persist(); render(); announce(`${example.name} example loaded.`); document.querySelector('#verdict-title')?.focus({ preventScroll: true }); document.querySelector('#verdict-title')?.scrollIntoView({ block: 'nearest' }); };
-  if (state.modified && state.case.sources.length) confirmDialog({ title: 'Replace this case with an example?', description: 'Your current source statements and clarifications will be replaced in this browser. This cannot be undone.', actionLabel: 'Load example', action });
+  const action = () => { settingsDraft = null; state = { version: 1, exampleId: id, modified: false, case: clone(example.case) }; persist(); render(); announce(`${example.name} example loaded.`); document.querySelector('#verdict-title')?.focus({ preventScroll: true }); document.querySelector('#verdict-title')?.scrollIntoView({ block: 'nearest' }); };
+  if (settingsDraft || (state.modified && state.case.sources.length)) confirmDialog({ title: 'Replace this case with an example?', description: 'Your current source statements, clarifications, and unapplied settings will be replaced in this browser. This cannot be undone.', actionLabel: 'Load example', action });
   else action();
 }
 document.addEventListener('click', event => {
@@ -266,9 +287,10 @@ document.addEventListener('click', event => {
   }
   if (target.dataset.action === 'close') closeDialog();
   if (target.dataset.action === 'add') sourceDialog();
-  if (target.dataset.action === 'reset') confirmDialog({ title: 'Start with a clean slate?', description: 'This removes the current case, source statements, and clarifications saved in this browser. This cannot be undone.', actionLabel: 'Start fresh', destructive: true, action: () => {
+  if (target.dataset.action === 'reset') confirmDialog({ title: 'Start with a clean slate?', description: 'This replaces the workspace saved in this browser, including changes from another tab, with an empty case. Your current source statements, clarifications, and unapplied settings will be removed. This cannot be undone.', actionLabel: 'Start fresh', destructive: true, action: () => {
+    settingsDraft = null;
     state = { version: 1, exampleId: null, modified: false, case: { title: '', localZone: state.case.localZone || 'UTC', bufferMinutes: 60, sources: [] } };
-    storageError = ''; persist(); render(); announce('Workspace cleared. Add your first source when you’re ready.'); document.querySelector('#workspace-title')?.focus();
+    persist({ replaceExisting: true }); render(); announce('Workspace cleared. Add your first source when you’re ready.'); document.querySelector('#workspace-title')?.focus();
   } });
   if (target.dataset.action === 'export') {
     if (!getAnalysis().canExport) return;
@@ -280,6 +302,14 @@ document.addEventListener('click', event => {
       announce('Calendar file downloaded. It contains your planning target before the agreed deadline.');
     } catch (error) { announce('Calendar export failed. Check that all sources resolve to one instant.'); target.insertAdjacentHTML('afterend', '<p role="alert" class="field-error">Export failed. Review the source details and try again.</p>'); }
   }
+});
+document.addEventListener('input', event => {
+  if (!['display-zone', 'buffer-minutes'].includes(event.target.id)) return;
+  const form = document.querySelector('#settings-form');
+  const localZone = form.elements.localZone.value;
+  const bufferMinutes = form.elements.bufferMinutes.value;
+  settingsDraft = localZone === state.case.localZone && bufferMinutes === String(state.case.bufferMinutes) ? null : { localZone, bufferMinutes };
+  document.querySelector('#settings-draft-status').textContent = settingsDraft ? settingsDraftMessage() : '';
 });
 document.addEventListener('change', event => {
   if (event.target.id === 'workspace-title') { state.case.title = event.target.value.trim(); state.modified = true; persist(); if (storageError) render(); }
@@ -293,6 +323,8 @@ document.addEventListener('submit', event => {
   const error = form.querySelector('#settings-error');
   if (!validZone(zone)) { error.textContent = 'Use a valid IANA zone, UTC, or ±HH:MM.'; form.elements.localZone.focus(); return; }
   if (!form.elements.bufferMinutes.value || !Number.isInteger(buffer) || buffer < 0 || buffer > 10080) { error.textContent = 'Enter a whole-number buffer from 0 to 10,080 minutes.'; form.elements.bufferMinutes.focus(); return; }
+  settingsDraft = null;
   state.case.localZone = zone; state.case.bufferMinutes = buffer; update('Display zone and planning buffer updated.', 'display-zone');
 });
 render();
+
