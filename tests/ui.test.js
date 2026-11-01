@@ -235,10 +235,36 @@ try {
       await b.reload();assert.equal(await b.locator('#workspace-title').inputValue(),'New empty case');assert.equal(await b.locator('.storage-warning').count(),0);
     } finally { await tabs.close(); }
   });
+  await check('multi-date timelines keep day context at desktop and mobile widths',async()=>{
+    const data={version:1,exampleId:null,modified:true,case:{title:'Synthetic multi-day comparison',localZone:'UTC',bufferMinutes:60,sources:['2026-12-31','2027-01-01'].map((date,index)=>({id:`date-${index}`,label:`Synthetic source ${index+1}`,quote:'Synthetic test deadline',date,time:'12:00',zone:'UTC'}))}};
+    await page.evaluate(value=>localStorage.setItem('cutoff.workspace.v1',JSON.stringify(value)),data);await page.reload();
+    for(const width of [1440,390,320]){
+      await page.setViewportSize({width,height:900});await noOverflow(page);
+      assert.deepEqual(await page.locator('.timeline-date').allTextContents(),['Dec 31, 2026','Dec 31, 2026','Jan 1, 2027']);
+      assert.deepEqual(await page.locator('.timeline-legend strong').allTextContents(),['11:00','12:00','12:00']);
+      assert.equal(await exportButton(page).isDisabled(),true);
+      for(const node of await page.locator('.timeline-date').all()) assert.equal(await node.isVisible(),true);
+      await page.screenshot({path:`evidence/timeline-dates-${width}.png`,fullPage:true});
+    }
+    await page.locator('#buffer-minutes').fill('0');await page.locator('#settings-form button').click();
+    assert.equal(await page.locator('.timeline-date').count(),3);
+    await loadExample(page,'agreement');assert.equal(await page.locator('.timeline-date').count(),0);
+    data.case.sources=[{id:'midnight',label:'Synthetic midnight',quote:'Synthetic deadline',date:'2027-01-01',time:'00:30',zone:'UTC'}];
+    await page.evaluate(value=>localStorage.setItem('cutoff.workspace.v1',JSON.stringify(value)),data);await page.reload();
+    assert.deepEqual(await page.locator('.timeline-date').allTextContents(),['Dec 31, 2026','Jan 1, 2027']);
+    assert.equal(await exportButton(page).isEnabled(),true);
+    await page.locator('#display-zone').fill('America/New_York');await page.locator('#settings-form button').click();
+    assert.equal(await page.locator('.timeline-date').count(),0);
+    await page.locator('#display-zone').fill('UTC');await page.locator('#settings-form button').click();
+    assert.equal(await page.locator('.timeline-date').count(),2);
+    await page.screenshot({path:'evidence/timeline-midnight-320.png',fullPage:true});
+    await page.emulateMedia({media:'print'});assert.equal(await page.locator('.timeline-date').count(),2);await page.emulateMedia({media:'screen'});
+  });
   await check('no unhandled browser exceptions or outbound app requests',async()=>{assert.deepEqual(consoleErrors,[]);assert.deepEqual(remoteRequests,[]);});
   await writeFile('evidence/ui-results.json',JSON.stringify({testedAt:new Date().toISOString(),browser:await browser.version(),viewportWidths:[1440,390,320],results,consoleErrors,remoteRequests,focusTrace},null,2));
   console.log(`\n${results.length} browser checks passed.`);
 } catch(error) {
   await writeFile('evidence/ui-failure.txt',`${String(error.stack||error)}\n\nFocus trace (synthetic test controls only):\n${JSON.stringify(focusTrace,null,2)}`);throw error;
 } finally {await browser?.close();server.kill('SIGTERM');}
+
 
