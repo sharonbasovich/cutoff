@@ -251,8 +251,9 @@ try {
     await page.locator('[data-example="agreement"]').click();assert.equal(await page.locator('#confirm-action').isVisible(),true);await page.locator('#confirm-cancel').click();
     await page.locator('#undo-restore').click();assert.deepEqual(await stored(page),original);assert.equal(await page.locator('#buffer-minutes').inputValue(),'77');
     await page.locator('#backup-button').click();await page.locator('#backup-json').fill(text);await page.locator('#review-backup').click();await page.locator('#confirm-restore').click();
-    await page.locator('#workspace-title').fill('Later edit');assert.equal(await page.locator('#undo-restore').count(),0);await page.locator('#backup-button').click();
-    await page.setViewportSize({width:320,height:740});await noOverflow(page);await axe(page,'backup-mobile');await page.screenshot({path:'evidence/mobile-backup-dialog.png',fullPage:true});await close(page);
+    await page.locator('#workspace-title').fill('Later edit');await page.keyboard.press('Tab');assert.equal(await page.locator('#undo-restore').count(),0);await page.locator('#backup-button').click();
+    await page.setViewportSize({width:320,height:740});await noOverflow(page);await axe(page,'backup-mobile');await page.screenshot({path:'evidence/mobile-backup-dialog.png',fullPage:true});
+    await page.locator('#backup-json').fill(text);await page.locator('#review-backup').click();assert.equal(await page.locator('#confirm-restore').isVisible(),true);await noOverflow(page);await axe(page,'backup-preview-mobile');await page.screenshot({path:'evidence/mobile-backup-preview.png',fullPage:true});await close(page);
   });
   await check('backup restore and Undo never overwrite externally changed storage',async()=>{
     const isolated=await browser.newContext();try {
