@@ -235,6 +235,36 @@ try {
       await b.reload();assert.equal(await b.locator('#workspace-title').inputValue(),'New empty case');assert.equal(await b.locator('.storage-warning').count(),0);
     } finally { await tabs.close(); }
   });
+  await check('portable backup review, cancellation, unresolved recovery, Undo and draft preservation',async()=>{
+    await page.setViewportSize({width:1280,height:900});await loadExample(page,'disagreement');
+    const original=await stored(page);await page.locator('#buffer-minutes').fill('77');
+    await page.locator('#backup-button').click();
+    const pending=page.waitForEvent('download');await page.locator('#download-backup').click();const download=await pending;
+    const text=await readFile(await download.path(),'utf8'),backup=JSON.parse(text);
+    assert.deepEqual(backup.workspace,original);assert.notEqual(backup.workspace.case.bufferMinutes,77);
+    await page.locator('#backup-json').fill(text);await page.locator('#review-backup').click();assert.match(await page.locator('#backup-preview').textContent(),/Conflicting deadlines/);
+    await close(page);assert.deepEqual(await stored(page),original);assert.equal(await page.locator('#buffer-minutes').inputValue(),'77');
+    await page.locator('#backup-button').click();await page.locator('#backup-json').fill(text);await page.locator('#review-backup').click();
+    await page.locator('#backup-json').fill('{');assert.equal(await page.locator('#confirm-restore').count(),0);await page.locator('#review-backup').click();assert.match(await page.locator('#backup-error').textContent(),/not valid JSON/);assert.deepEqual(await stored(page),original);
+    backup.workspace.case.title='Recovered conflicting evidence';await page.locator('#backup-json').fill(JSON.stringify(backup));await page.locator('#review-backup').click();await page.locator('#confirm-restore').click();
+    assert.equal(await page.locator('#workspace-title').inputValue(),'Recovered conflicting evidence');assert.equal(await exportButton(page).isDisabled(),true);assert.equal((await stored(page)).modified,true);
+    await page.locator('[data-example="agreement"]').click();assert.equal(await page.locator('#confirm-action').isVisible(),true);await page.locator('#confirm-cancel').click();
+    await page.locator('#undo-restore').click();assert.deepEqual(await stored(page),original);assert.equal(await page.locator('#buffer-minutes').inputValue(),'77');
+    await page.locator('#backup-button').click();await page.locator('#backup-json').fill(text);await page.locator('#review-backup').click();await page.locator('#confirm-restore').click();
+    await page.locator('#workspace-title').fill('Later edit');await page.keyboard.press('Tab');assert.equal(await page.locator('#undo-restore').count(),0);await page.locator('#backup-button').click();
+    await page.setViewportSize({width:320,height:740});await noOverflow(page);await axe(page,'backup-mobile');await page.screenshot({path:'evidence/mobile-backup-dialog.png',fullPage:true});
+    await page.locator('#backup-json').fill(text);await page.locator('#review-backup').click();assert.equal(await page.locator('#confirm-restore').isVisible(),true);await noOverflow(page);await axe(page,'backup-preview-mobile');await page.screenshot({path:'evidence/mobile-backup-preview.png',fullPage:true});await close(page);
+  });
+  await check('backup restore and Undo never overwrite externally changed storage',async()=>{
+    const isolated=await browser.newContext();try {
+      const p=await isolated.newPage();await p.goto(base);await loadExample(p,'agreement');const before=await stored(p);
+      const backup={format:'cutoff-workspace',version:1,createdAt:'2026-11-02T20:00:00.000Z',workspace:structuredClone(before)};backup.workspace.case.title='Restored tab copy';
+      await p.locator('#backup-button').click();await p.locator('#backup-json').fill(JSON.stringify(backup));await p.locator('#review-backup').click();
+      const newer=structuredClone(before);newer.case.title='Newer saved elsewhere';await p.evaluate(v=>localStorage.setItem('cutoff.workspace.v1',JSON.stringify(v)),newer);
+      await p.locator('#confirm-restore').click();assert.equal(await p.locator('#workspace-title').inputValue(),'Restored tab copy');assert.deepEqual(await stored(p),newer);assert.match(await p.locator('.storage-warning').textContent(),/changed outside this tab/);
+      await p.locator('#undo-restore').click();assert.equal(await p.locator('#workspace-title').inputValue(),before.case.title);assert.deepEqual(await stored(p),newer);assert.match(await p.locator('#announcer').textContent(),/this tab only/);
+    }finally{await isolated.close();}
+  });
   await check('multi-date timelines keep day context at desktop and mobile widths',async()=>{
     const data={version:1,exampleId:null,modified:true,case:{title:'Synthetic multi-day comparison',localZone:'UTC',bufferMinutes:60,sources:['2026-12-31','2027-01-01'].map((date,index)=>({id:`date-${index}`,label:`Synthetic source ${index+1}`,quote:'Synthetic test deadline',date,time:'12:00',zone:'UTC'}))}};
     await page.evaluate(value=>localStorage.setItem('cutoff.workspace.v1',JSON.stringify(value)),data);await page.reload();
@@ -266,5 +296,6 @@ try {
 } catch(error) {
   await writeFile('evidence/ui-failure.txt',`${String(error.stack||error)}\n\nFocus trace (synthetic test controls only):\n${JSON.stringify(focusTrace,null,2)}`);throw error;
 } finally {await browser?.close();server.kill('SIGTERM');}
+
 
 

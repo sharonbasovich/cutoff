@@ -58,6 +58,10 @@ jobs:
             evidence/mobile-agreement.png
             evidence/mobile-source-dialog.png
             evidence/mobile-320.png
+            evidence/mobile-backup-dialog.png
+            evidence/mobile-backup-preview.png
+            evidence/axe-backup-mobile.json
+            evidence/axe-backup-preview-mobile.json
             evidence/mobile-pending-settings.png
             evidence/axe-pending-settings.json
             evidence/axe-desktop.json
@@ -76,3 +80,4 @@ jobs:
           name: cutoff-tested-dist
           retention-days: 1
           path: dist/
+
