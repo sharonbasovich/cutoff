@@ -1,0 +1,48 @@
+name: Materialize reviewed Cutoff build
+on:
+  push:
+    branches: [release/backup-objects-20261102]
+permissions:
+  actions: read
+  contents: write
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact successful artifact and materialize blobs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import os, json, urllib.request, hashlib, zipfile, io, base64
+          root = 'https://api.github.com/repos/sharonbasovich/cutoff'
+          def api(path, data=None):
+              request = urllib.request.Request(root + path, data=None if data is None else json.dumps(data).encode(), headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'})
+              return urllib.request.urlopen(request).read()
+          run = json.loads(api('/actions/runs/41523289933'))
+          assert run['conclusion']=='success' and run['head_sha']=='e8274264eee03cc6e181e9d2239762e5962636aa'
+          meta = json.loads(api('/actions/artifacts/13178971247'))
+          assert meta['workflow_run']['id']==41523289933 and meta['name']=='cutoff-tested-dist'
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl): return None
+          request=urllib.request.Request(root+'/actions/artifacts/13178971247/zip',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN']})
+          try:
+              urllib.request.build_opener(NoRedirect).open(request)
+              raise AssertionError('Expected signed artifact redirect')
+          except urllib.error.HTTPError as error:
+              assert error.code==302
+              signed=error.headers['Location']
+          assert signed.startswith('https://')
+          archive=urllib.request.urlopen(signed).read()
+          assert hashlib.sha256(archive).hexdigest()=='3336cf526b75cdbcc7cc221c40dedbecba18c7ef340827fd451637326e35b5a2'
+          z=zipfile.ZipFile(io.BytesIO(archive))
+          names={'index.html','app.js','app.js.map','app.css','app.css.map','favicon.svg','LICENSE.txt','THIRD_PARTY_NOTICES.txt'}
+          assert set(z.namelist())==names
+          for name in sorted(names):
+              data=z.read(name)
+              expected=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+              blob=json.loads(api('/git/blobs',{'content':base64.b64encode(data).decode(),'encoding':'base64'}))
+              assert blob['sha']==expected
+              print('VERIFIED_BLOB '+json.dumps({'path':name,'sha':expected,'sha256':hashlib.sha256(data).hexdigest()}))
+          PY
