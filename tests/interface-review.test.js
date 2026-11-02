@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as model from '../src/model.js';
 import * as ui from '../src/ui-utils.js';
+import * as backup from '../src/backup.js';
 import { examples } from '../src/examples.js';
 
 const source = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
@@ -26,7 +27,7 @@ function harness({ stored = null, readBlocked = false, writeBlocked = false } = 
     activeElement: null,
   };
   const sandbox = vm.createContext({
-    ...model, ...ui, examples, document: doc, Intl, URL, Blob, console, setTimeout,
+    ...model, ...ui, ...backup, examples, document: doc, Intl, URL, Blob, console, setTimeout,
     crypto: { randomUUID: () => 'review-generated-id' },
     localStorage: {
       getItem: () => { if (readBlocked) throw new Error('Read blocked'); return stored; },
@@ -599,4 +600,14 @@ test('interface: partially unresolved timeline dates describe only resolved inst
   assert.equal((html.match(/class="timeline-date"/g) || []).length, 2);
   assert.doesNotMatch(html, /Jan 2|Your planning target/);
   assert.match(html, /Only resolved sources/);
+});
+
+
+test('backup: modified empty restored case requires confirmation before example replacement', () => {
+  const data = stateFrom();data.modified=true;data.case.sources=[];data.case.title='My empty recovery plan';data.case.bufferMinutes=88;
+  const h=harness({stored:JSON.stringify(data)});
+  h.evaluate('restoreUndo = {state: clone(state), settingsDraft: null}; confirmDialog = options => { globalThis.pendingConfirm = options; }; loadExample("gap")');
+  assert.ok(h.sandbox.pendingConfirm);
+  assert.equal(h.evaluate('state.case.title'),'My empty recovery plan');assert.notEqual(h.evaluate('restoreUndo'),null);
+  h.sandbox.pendingConfirm.action();assert.equal(h.evaluate('state.exampleId'),'gap');assert.equal(h.evaluate('restoreUndo'),null);
 });

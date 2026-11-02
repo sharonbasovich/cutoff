@@ -26,3 +26,14 @@
 
 /* Keep day context beside a clock time when the timeline crosses dates. */
 .timeline-legend .timeline-date{color:var(--ink);font-size:11px;line-height:1.5;margin:3px 0 2px;font-variant-numeric:tabular-nums}
+
+
+/* Local backup recovery: no motion, readable review before replacement. */
+.backup-receipt { max-width: 1440px; margin: 16px auto; padding: 16px 24px; display: flex; gap: 16px; align-items: center; justify-content: space-between; background: #edf2e9; border: 1px solid #a7b79a; color: #263a2b; }
+.backup-section + .backup-section { border-top: 1px solid #d8d8cf; margin-top: 24px; padding-top: 24px; }
+.backup-section p { line-height: 1.6; }
+#backup-json { width: 100%; box-sizing: border-box; font: 13px/1.5 monospace; resize: vertical; }
+#backup-preview { margin-top: 20px; padding: 20px; border: 1px solid #a7b79a; background: #f1f4ed; border-radius: 12px; overflow-wrap: anywhere; }
+#backup-preview:focus { outline: 3px solid #344b38; outline-offset: 3px; }
+@media (max-width: 600px) { .backup-receipt { flex-direction: column; align-items: stretch; margin: 12px; } .topbar-right { flex-wrap: wrap; justify-content: flex-end; } }
+@media print { .backup-receipt, #backup-button { display: none !important; } }

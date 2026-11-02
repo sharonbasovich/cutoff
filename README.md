@@ -50,7 +50,7 @@ The GitHub Actions workflow runs on pushes and pull requests to `main`, and can 
 
 The app has no accounts, analytics, tracking, paid APIs or remote data fetches. Assets are self-hosted; the page's Content Security Policy disables app network connections. The tested browser flows produced no observed outbound app requests. Following a source link opens that external site.
 
-Workspace data is saved in this browser's local storage. Unapplied display-zone and buffer edits remain in the current tab through source changes; the comparison keeps using the last applied settings. Apply them before reloading or closing the page. Loading another example or starting fresh explicitly discards those drafts. It is not encrypted, synchronized or backed up; anyone with access to the browser profile may be able to read it. Storage can be blocked or cleared. The hosting page must be available when loading the app.
+Workspace data is saved in this browser's local storage. Unapplied display-zone and buffer edits remain in the current tab through source changes; the comparison keeps using the last applied settings. Apply them before reloading or closing the page. Loading another example or starting fresh explicitly discards those drafts. It is not encrypted, synchronized or automatically backed up; anyone with access to the browser profile may be able to read it. Storage can be blocked or cleared. The hosting page must be available when loading the app.
 
 Cutoff does not fetch or verify source websites, parse prose, validate transcription against a quote, or decide which source is authoritative. All bundled examples and test fixtures are synthetic, with illustrative `example.com` links. Time-zone conversions depend on the runtime's time-zone database. Confirm consequential deadlines with the organizer.
 
@@ -67,3 +67,11 @@ MIT; see [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.tx
 - [iCalendar RFC 5545](https://www.rfc-editor.org/rfc/rfc5545)
 - [Playwright browser installation](https://playwright.dev/docs/browsers)
 
+
+## Portable workspace backups
+
+**Backup & restore** downloads a versioned JSON copy even when source deadlines conflict or remain unresolved. The file preserves entered quotes, URLs, clarification notes and applied settings. It does not include unapplied settings or unsaved dialog edits, and is not encrypted: keep it private. Browser storage is not a durable backup; verify the download and keep your own recoverable copy.
+
+To restore, open the saved JSON as text, paste it into the dialog, and review the case name, source count and freshly calculated result before explicitly replacing the workspace. Cancel or Escape makes no change. Backup timestamps and source claims are not verification or authority. The app rejects unknown fields, unsafe object keys, unsupported versions, invalid display zones, oversized files (2 MB) and more than 100 sources. Invalid or ambiguous source facts remain unresolved; import never unlocks calendar export based on saved metadata.
+
+After replacement, **Undo restore** recovers the preceding workspace and unapplied settings until the next workspace edit (or page reload). A restored workspace is treated as user-owned work, so loading an example requires confirmation. Existing blocked-storage and stale-tab safeguards still apply: restore and Undo may remain in this tab only, with the storage warning shown. They never force-overwrite a newer saved workspace.

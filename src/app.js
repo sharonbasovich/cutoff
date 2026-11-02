@@ -2,6 +2,7 @@ import './styles.css';
 import { analyzeCase, analyzeSource, exportCalendar, formatInstant, normalizeZone } from './model.js';
 import { examples } from './examples.js';
 import { validState, safeURL, dateParts } from './ui-utils.js';
+import { createBackup, readBackup } from './backup.js';
 
 const KEY = 'cutoff.workspace.v1';
 const app = document.querySelector('#app');
@@ -17,6 +18,7 @@ let state = load();
 let analysis;
 // Unapplied settings stay in this tab until Apply or an intentional case change.
 let settingsDraft = null;
+let restoreUndo = null;
 
 const paths = {
   arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
@@ -69,6 +71,7 @@ function persist({ replaceExisting = false } = {}) {
 }
 function announce(message) { document.querySelector('#announcer').textContent = message; }
 function update(message = '', focusId = null) {
+  restoreUndo = null;
   state.modified = true;
   persist(); render();
   if (message) announce(message);
@@ -100,8 +103,9 @@ function render() {
     <header class="topbar">
       <a class="brand" href="#workspace" aria-label="Cutoff workspace"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>cutoff<span class="brand-dot">.</span></a>
       <span class="brand-caption">A CLEARER DEADLINE</span>
-      <div class="topbar-right"><span class="private-label">${icon('shield')} Local. Private. Yours.</span><button class="button button-small button-quiet" id="reset-button" data-action="reset">${icon('refresh')} Start fresh</button></div>
+      <div class="topbar-right"><button class="button button-small button-quiet" id="backup-button" data-action="backup">${icon('download')} Backup & restore</button><span class="private-label">${icon('shield')} Local. Private. Yours.</span><button class="button button-small button-quiet" id="reset-button" data-action="reset">${icon('refresh')} Start fresh</button></div>
     </header>
+    ${restoreUndo ? '<div class="backup-receipt" role="status"><span>Backup restored. Undo is available until your next workspace edit.</span><button class="button button-small button-outline" id="undo-restore" data-action="undo-restore">Undo restore</button></div>' : ''}
     ${storageError ? `<div class="storage-warning" role="alert">${icon('warning')}<span>${escape(storageError)}</span></div>` : ''}
     <main id="workspace" tabindex="-1">
       <section class="intro"><div><p class="eyebrow"><span class="tiny-cross">+</span> THE DEADLINE WORKBENCH</p><h1>Make time <span>make sense.</span></h1><p class="intro-copy">Different sources. Different time zones. One clear view of what’s due, and when.</p></div><div class="intro-note"><span class="note-rule"></span>Keep the evidence.<br>See the uncertainty.<br>Leave yourself room.</div></section>
@@ -266,14 +270,46 @@ function confirmDialog({ title, description, actionLabel, action, destructive = 
   dialog.addEventListener('close', () => { if (!confirmed && onCancel) onCancel(); });
   dialog.querySelector('#confirm-action').addEventListener('click', () => { confirmed = true; closeDialog(); action(); });
 }
+function backupDialog() {
+  const dialog = openDialog(`${dialogHeader('KEEP YOUR WORK', 'Backup & restore', 'Save a portable copy even when deadlines disagree or remain unresolved. Everything is processed in this browser; Cutoff does not upload it.')}<section class="backup-section"><h3>Save this workspace</h3><p>The JSON file includes source quotes, links and clarification notes. Keep it private. It contains applied settings only—not unapplied settings or unsaved dialog edits. Browser storage itself is not a backup.</p><button class="button button-outline" id="download-backup">${icon('download')} Download JSON backup</button><p id="backup-download-status" role="status"></p></section><section class="backup-section"><h3>Restore a saved copy</h3><label class="field-label" for="backup-json">Paste the contents of a Cutoff JSON backup</label><textarea id="backup-json" rows="6" maxlength="2000000" spellcheck="false" aria-describedby="backup-limit"></textarea><p class="field-hint" id="backup-limit">Open your downloaded .json file as text and paste it here. Maximum 2 MB / 100 sources. A review comes before replacement.</p><p class="field-error" id="backup-error" role="alert"></p><button class="button button-outline" id="review-backup">Review pasted backup</button><div id="backup-preview" hidden tabindex="-1"></div></section><div class="dialog-footer"><span></span><button class="button button-outline" data-action="close">Cancel</button></div>`, '#download-backup');
+  dialog.id = 'backup-dialog'; dialog.setAttribute('aria-labelledby', 'dialog-title');
+  let reviewed = null;
+  dialog.querySelector('#download-backup').addEventListener('click', () => {
+    try {
+      const text = createBackup(state);
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = 'cutoff-workspace.json';
+      document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      dialog.querySelector('#backup-download-status').textContent = 'Download requested. Check that the JSON file was saved; keep it somewhere you can recover.';
+    } catch (error) { dialog.querySelector('#backup-error').textContent = error.message; }
+  });
+  const input = dialog.querySelector('#backup-json'), preview = dialog.querySelector('#backup-preview');
+  input.addEventListener('input', () => { reviewed = null; preview.hidden = true; preview.innerHTML = ''; dialog.querySelector('#backup-error').textContent = ''; });
+  dialog.querySelector('#review-backup').addEventListener('click', () => {
+    try {
+      reviewed = readBackup(input.value);
+      const result = analyzeCase(reviewed.workspace.case);
+      const labels = { empty: 'Empty case', blocked: 'Unresolved — calendar export locked', conflict: 'Conflicting deadlines — calendar export locked', agreement: 'Entered instants agree — not independently verified' };
+      preview.innerHTML = `<h3>Review before replacing</h3><p><strong>${escape(reviewed.workspace.case.title || 'Untitled case')}</strong> · ${reviewed.workspace.case.sources.length} sources</p><p>Backup created ${escape(reviewed.createdAt)}. This timestamp is not source verification.</p><p>${escape(labels[result.status] || 'Check sources')}</p><p>Display zone: ${escape(reviewed.workspace.case.localZone)} · buffer: ${reviewed.workspace.case.bufferMinutes} minutes.</p><p>This replaces the current workspace and discards unapplied settings. Source facts and clarifications are preserved as entered and recalculated, not verified. Undo is available until the next edit. If browser storage is unavailable or changed elsewhere, the restored copy stays in this tab only.</p><button class="button button-dark" id="confirm-restore">Replace with this backup</button>`;
+      preview.hidden = false; dialog.querySelector('#backup-error').textContent = ''; preview.focus();
+      preview.querySelector('#confirm-restore').addEventListener('click', () => {
+        if (!reviewed) return;
+        restoreUndo = { state: clone(state), settingsDraft: settingsDraft ? clone(settingsDraft) : null };
+        state = clone(reviewed.workspace); state.modified = true; settingsDraft = null;
+        closeDialog(); persist(); render(); announce(storageError ? 'Backup restored in this tab only. Browser storage was not overwritten. Download a backup before closing.' : 'Backup restored and comparison recalculated. Undo restore is available.');
+        document.querySelector('#undo-restore')?.focus();
+      });
+    } catch (error) { reviewed = null; preview.hidden = true; preview.innerHTML = ''; dialog.querySelector('#backup-error').textContent = error.message; input.focus(); }
+  });
+}
 function validZone(value) {
   try { normalizeZone(value); return true; } catch { return false; }
 }
 function loadExample(id) {
   const example = examples.find(e => e.id === id);
   if (!example) return;
-  const action = () => { settingsDraft = null; state = { version: 1, exampleId: id, modified: false, case: clone(example.case) }; persist(); render(); announce(`${example.name} example loaded.`); document.querySelector('#verdict-title')?.focus({ preventScroll: true }); document.querySelector('#verdict-title')?.scrollIntoView({ block: 'nearest' }); };
-  if (settingsDraft || (state.modified && state.case.sources.length)) confirmDialog({ title: 'Replace this case with an example?', description: 'Your current source statements, clarifications, and unapplied settings will be replaced in this browser. This cannot be undone.', actionLabel: 'Load example', action });
+  const action = () => { restoreUndo = null; settingsDraft = null; state = { version: 1, exampleId: id, modified: false, case: clone(example.case) }; persist(); render(); announce(`${example.name} example loaded.`); document.querySelector('#verdict-title')?.focus({ preventScroll: true }); document.querySelector('#verdict-title')?.scrollIntoView({ block: 'nearest' }); };
+  if (settingsDraft || state.modified) confirmDialog({ title: 'Replace this case with an example?', description: 'Your current case title, source statements, clarifications, and settings will be replaced in this browser. This cannot be undone.', actionLabel: 'Load example', action });
   else action();
 }
 document.addEventListener('click', event => {
@@ -288,10 +324,15 @@ document.addEventListener('click', event => {
     closeDialog();
     return confirmDialog({ title: 'Remove this source?', description: 'The source statement and its clarification will be removed from this browser’s case. This cannot be undone.', actionLabel: 'Remove source', destructive: true, onCancel: () => sourceDialog(id, draftValues), action: () => { state.case.sources = state.case.sources.filter(s => s.id !== id); update('Source removed. Comparison updated.'); } });
   }
+  if (target.dataset.action === 'backup') return backupDialog();
+  if (target.dataset.action === 'undo-restore' && restoreUndo) {
+    const previous = restoreUndo; restoreUndo = null; state = previous.state; settingsDraft = previous.settingsDraft;
+    persist(); render(); announce(storageError ? 'Previous workspace and unapplied settings restored in this tab only. Browser storage was not overwritten; download a backup before closing.' : 'Previous workspace and unapplied settings restored.'); document.querySelector('#backup-button')?.focus(); return;
+  }
   if (target.dataset.action === 'close') closeDialog();
   if (target.dataset.action === 'add') sourceDialog();
   if (target.dataset.action === 'reset') confirmDialog({ title: 'Start with a clean slate?', description: 'This replaces the workspace saved in this browser, including changes from another tab, with an empty case. Your current source statements, clarifications, and unapplied settings will be removed. This cannot be undone.', actionLabel: 'Start fresh', destructive: true, action: () => {
-    settingsDraft = null;
+    restoreUndo = null; settingsDraft = null;
     state = { version: 1, exampleId: null, modified: false, case: { title: '', localZone: state.case.localZone || 'UTC', bufferMinutes: 60, sources: [] } };
     persist({ replaceExisting: true }); render(); announce('Workspace cleared. Add your first source when you’re ready.'); document.querySelector('#workspace-title')?.focus();
   } });
@@ -307,7 +348,9 @@ document.addEventListener('click', event => {
   }
 });
 document.addEventListener('input', event => {
+  if (event.target.id === 'workspace-title') { restoreUndo = null; document.querySelector('.backup-receipt')?.remove(); }
   if (!['display-zone', 'buffer-minutes'].includes(event.target.id)) return;
+  restoreUndo = null; document.querySelector('.backup-receipt')?.remove();
   const form = document.querySelector('#settings-form');
   const localZone = form.elements.localZone.value;
   const bufferMinutes = form.elements.bufferMinutes.value;
@@ -315,7 +358,7 @@ document.addEventListener('input', event => {
   document.querySelector('#settings-draft-status').textContent = settingsDraft ? settingsDraftMessage() : '';
 });
 document.addEventListener('change', event => {
-  if (event.target.id === 'workspace-title') { state.case.title = event.target.value.trim(); state.modified = true; persist(); if (storageError) render(); }
+  if (event.target.id === 'workspace-title') { restoreUndo = null; document.querySelector('.backup-receipt')?.remove(); state.case.title = event.target.value.trim(); state.modified = true; persist(); if (storageError) render(); }
 });
 document.addEventListener('submit', event => {
   if (event.target.id !== 'settings-form') return;
@@ -330,5 +373,6 @@ document.addEventListener('submit', event => {
   state.case.localZone = zone; state.case.bufferMinutes = buffer; update('Display zone and planning buffer updated.', 'display-zone');
 });
 render();
+
 
 
