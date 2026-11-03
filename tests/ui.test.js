@@ -183,7 +183,7 @@ try {
     await page.locator('#keep-editing').click();assert.equal(await page.locator('[name="fold"][value="later"]').isChecked(),true);
     assert.equal(await page.locator('#resolution-note').inputValue(),'Unfinished synthetic confirmation');
     await page.locator('#resolution-zone').fill('UTC');await close(page);await page.locator('#keep-editing').click();
-    assert.equal(await page.locator('#resolution-zone').inputValue(),'UTC');assert.equal(await page.locator('.choice-fieldset').isDisabled(),true);
+    assert.equal(await page.locator('#resolution-zone').inputValue(),'UTC');assert.equal(await page.locator('[name="fold"][value="later"]').isDisabled(),true);
     await close(page);await page.locator('#discard-edits').click();assert.equal(JSON.stringify(await stored(page)),before);
   });
   await check('canceling source removal retains dirty protection against the actual saved source',async()=>{

@@ -214,6 +214,8 @@ function openDialog(html, initialFocus) {
   dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) requestDialogClose(dialog); } });
   dialog.addEventListener('cancel', event => { event.preventDefault(); requestDialogClose(dialog); });
   dialog.addEventListener('keydown', event => {
+    // Handle Escape before native CloseWatcher can force a repeated dismissal.
+    if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); requestDialogClose(dialog); return; }
     if (event.key !== 'Tab' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || !dialog.open) return;
     // Keep the app's tab cycle inside the modal; leave native interior controls alone.
     const tabbable = [...dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]')].filter(element =>
