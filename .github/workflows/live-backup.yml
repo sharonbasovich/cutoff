@@ -1,4 +1,4 @@
-name: Verify released workspace recovery
+name: Verify released draft protection
 on:
   push:
     branches: [verify/backup-live-20261102]
@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: e7db043306a650b09384be7b423b88dfba471986
+          ref: 1bbb89858420e500a71d453e9a10e4348816373a
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -27,7 +27,7 @@ jobs:
           import {createHash} from 'node:crypto';
           import {readFile} from 'node:fs/promises';
           const base='https://sharonbasovich.github.io/cutoff/';
-          const hashes={"LICENSE.txt":"cbde67c81f263d4f7513b588b2076a54064d8591970e11e31427cafb134130f7","THIRD_PARTY_NOTICES.txt":"be5d244efce7de0c6fb9fdefd306bb84e91f573bdccc6bf479e795a494982097","app.css":"0ae70c072407d7af1b2544b0a16fc6e1b718dc5b7469d6c50cfc1c25626786e8","app.css.map":"cc7e672796c07e2ccd6f948f75dd3228767821e9c281ecd10fdc8394369db3d5","app.js":"df251c0b5d2210baf4a799d4f35d28851151825af3730caabf88ddce260db868","app.js.map":"23a93f5a07b820f1e8a3710797f1968f4a8fc5da0548166d62aeef7481a1faf1","favicon.svg":"c0916576e317abfb728dc4eb6a12d74b96e7822995b09fe9b2c77d713bbdc05f","index.html":"b6fff09623b65fe07972d00baedceaedcaba45cef3fbd3d8c3723558de5ddce6"};
+          const hashes={"app.js": "46df2ea43bf3de75f11beee88a8b95c4392027656c158cdf1c74bbe14e96babe", "app.js.map": "aa8ad4e20ba9a333ea6b86686ad0ed13db39b7652d7bae8b8ba29730feee4e03", "THIRD_PARTY_NOTICES.txt": "be5d244efce7de0c6fb9fdefd306bb84e91f573bdccc6bf479e795a494982097", "app.css": "0ae70c072407d7af1b2544b0a16fc6e1b718dc5b7469d6c50cfc1c25626786e8", "index.html": "b6fff09623b65fe07972d00baedceaedcaba45cef3fbd3d8c3723558de5ddce6", "LICENSE.txt": "cbde67c81f263d4f7513b588b2076a54064d8591970e11e31427cafb134130f7", "favicon.svg": "c0916576e317abfb728dc4eb6a12d74b96e7822995b09fe9b2c77d713bbdc05f", "app.css.map": "cc7e672796c07e2ccd6f948f75dd3228767821e9c281ecd10fdc8394369db3d5"};
           for(const [path,hash] of Object.entries(hashes)){
             const r=await fetch(base+path);assert.equal(r.ok,true,path);
             assert.equal(createHash('sha256').update(Buffer.from(await r.arrayBuffer())).digest('hex'),hash,path);
@@ -37,25 +37,21 @@ jobs:
             const page=await browser.newPage({viewport:{width:390,height:844}});
             const errors=[];page.on('pageerror',e=>errors.push(e.message));
             await page.goto(base);
-            await page.locator('#backup-button').click();
-            const dp=page.waitForEvent('download');await page.locator('#download-backup').click();
-            const backup=await readFile(await (await dp).path(),'utf8');
-            await page.getByRole('button',{name:'Cancel',exact:true}).click();
+            for(const selector of ['#source-date','#source-time']) {
+              await page.locator('#add-source').click(); const field=page.locator(selector);
+              await field.focus();await page.keyboard.press('1');
+              assert.deepEqual(await field.evaluate(e=>({value:e.value,badInput:e.validity.badInput})),{value:'',badInput:true});
+              for(let i=0;i<4;i++) {await page.keyboard.press('Escape');assert.equal(await page.locator('dialog[open]').count(),1);assert.equal(await field.evaluate(e=>e.validity.badInput),true);assert.equal(await page.evaluate(()=>!!document.activeElement.closest('dialog[open]')),true);}
+              await page.keyboard.press('Escape');await page.locator('#discard-edits').click();
+            }
             await page.locator('[data-example="fold"]').click();
-            if(await page.locator('#confirm-action').isVisible())await page.locator('#confirm-action').click();
-            const oldTitle=await page.locator('#workspace-title').inputValue();
-            await page.locator('#buffer-minutes').fill('90');
-            await page.locator('#backup-button').click();await page.locator('#backup-json').fill(backup);
-            await page.locator('#review-backup').click();assert.match(await page.locator('#backup-preview').textContent(),/Conflicting deadlines/);
-            await page.locator('#confirm-restore').click();assert.equal(await page.locator('#export-calendar').isDisabled(),true);
-            assert.equal(await page.locator('#workspace-title').inputValue(),'The final submission');
-            await page.locator('#undo-restore').click();assert.equal(await page.locator('#workspace-title').inputValue(),oldTitle);
-            assert.equal(await page.locator('#buffer-minutes').inputValue(),'90');
-            assert.match(await page.locator('#settings-draft-status').textContent(),/not applied/);
-            assert.equal(await page.locator('#export-calendar').isDisabled(),true);
-            assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-            await page.reload();assert.equal(await page.locator('#workspace-title').inputValue(),oldTitle);
-            assert.deepEqual(errors,[]);
-            console.log('PASS: all8 exact public asset hashes;390px download/review/restore/export lock/Undo/draft/reload/nooverflow/no pageerrors');
+            for(const [opener,field] of [['[data-edit]','#source-quote'],['[data-resolve]','#resolution-note']]) {
+              await page.locator(opener).click();await page.locator(field).fill('Synthetic public QA draft');
+              for(let i=0;i<4;i++) {await page.keyboard.press('Escape');assert.equal(await page.locator('dialog[open]').count(),1);assert.equal(await page.locator(field).inputValue(),'Synthetic public QA draft');assert.equal(await page.locator(i%2===0?'#keep-editing':field).evaluate(e=>e===document.activeElement),true);}
+              await page.keyboard.press('Escape');await page.locator('#discard-edits').click();
+            }
+            assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);
+            console.log('PASS: all8 exact public assets;390px partialdate/time and4Escapes perdirtydialog preserve draft/focus, nooverflow/errors');
           }finally{await browser.close();}
           JS
+
