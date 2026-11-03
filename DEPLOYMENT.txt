@@ -1,10 +1,6 @@
-Cutoff deployment — 2026-11-02
-Source merge: e7db043306a650b09384be7b423b88dfba471986
-Reviewed PR head: e8274264eee03cc6e181e9d2239762e5962636aa
-PR: https://github.com/sharonbasovich/cutoff/pull/7
-Candidate verification: https://github.com/sharonbasovich/cutoff/actions/runs/41523289933
-100 Node tests, production build and 22 Chromium check groups passed.
-Exact tested static artifact 13178971247 SHA256 3336cf526b75cdbcc7cc221c40dedbecba18c7ef340827fd451637326e35b5a2.
-Portable private JSON workspace backup, reviewed restore and Undo. No source verification is inferred from imports; unresolved evidence keeps calendar export locked. No new app network access.
-Automated accessibility has no violations in the new recovery views, but incomplete contrast checks remain. No screen-reader or actual mobile-device testing claim.
-Historical source files on this publishing branch are not the canonical current source; use main and the reviewed PR above. The root app assets are the exact tested build.
+Cutoff draft protection release 2026-11-03
+PR8 and PR9; main1bbb89858420e500a71d453e9a10e4348816373a.
+Reviewed head27f56ed11d092d8792df5f106d2851f9e3fa2f16; CI41574404471 SUCCESS101Node/28browsergroups.
+Exact tested-dist artifact13202692178 ZIP SHA256cd12b78357edd16f26f6a3afd0d01de49922a99a76166008dfc3f82c363b4e30.
+Materialization41574734567 verified all8 blobs. Independent actual Chrome review and320px screenshot inspection complete.
+No submission or video changes.
