@@ -152,9 +152,45 @@ try {
   });
   await check('saved clarification survives reload',async()=>{await page.reload();assert.equal((await stored(page)).case.sources[0].resolution.fold,'later');assert.equal(await exportButton(page).isEnabled(),true);});
   await check('edit Cancel and Escape keep state, saving resets stale clarifications',async()=>{
-    const before=JSON.stringify(await stored(page));await page.locator('[data-edit]').click();await page.locator('[name="label"]').fill('Discard me');await close(page);assert.equal(JSON.stringify(await stored(page)),before);
+    const before=JSON.stringify(await stored(page));await page.locator('[data-edit]').click();await page.locator('[name="label"]').fill('Discard me');await close(page);await page.locator('#discard-edits').click();assert.equal(JSON.stringify(await stored(page)),before);
     await page.locator('[data-edit]').click();await page.locator('[name="label"]').fill('New notice label');await page.locator('#source-form button[type="submit"]').click();await page.waitForTimeout(60);
     assert.deepEqual((await stored(page)).case.sources[0].resolution,{});assert.equal(await exportButton(page).isDisabled(),true);
+  });
+  await check('dirty source dismissal protects quotes, restores focus and never autosaves',async()=>{
+    await loadExample(page,'fold');const before=JSON.stringify(await stored(page));
+    await page.locator('[data-edit]').click();const original=await page.locator('#source-quote').inputValue();
+    await page.locator('#source-quote').fill('Unsaved synthetic evidence');await close(page);
+    assert.equal(await page.locator('#keep-editing').isVisible(),true);
+    assert.equal(await page.locator('#keep-editing').evaluate(e=>e===document.activeElement),true);
+    assert.equal(JSON.stringify(await stored(page)),before);
+    await page.keyboard.press('Shift+Tab');assert.equal(await page.locator('#discard-edits').evaluate(e=>e===document.activeElement),true);
+    await page.keyboard.press('Tab');assert.equal(await page.locator('#keep-editing').evaluate(e=>e===document.activeElement),true);
+    await axe(page,'draft-guard');await page.screenshot({path:'evidence/draft-guard-desktop.png',fullPage:true});
+    await close(page);assert.equal(await page.locator('#source-quote').inputValue(),'Unsaved synthetic evidence');
+    assert.equal(await page.locator('#source-quote').evaluate(e=>e===document.activeElement),true);
+    await page.locator('#source-form [data-action="close"]').last().click();await page.locator('#keep-editing').click();
+    await page.locator('#source-form [aria-label="Close dialog"]').click();await page.locator('#keep-editing').click();
+    await page.mouse.click(1,1);assert.equal(await page.locator('#discard-edits').isVisible(),true);await page.locator('#keep-editing').click();
+    await page.locator('#source-quote').fill(original);await close(page);assert.equal(await page.locator('dialog[open]').count(),0);
+    await page.locator('#add-source').click();await page.locator('#source-quote').fill('Incomplete draft, no date');await close(page);
+    await page.setViewportSize({width:320,height:740});await noOverflow(page);await axe(page,'draft-guard-mobile');
+    await page.screenshot({path:'evidence/draft-guard-mobile.png',fullPage:true});await page.locator('#discard-edits').click();
+    assert.equal(JSON.stringify(await stored(page)),before);await page.setViewportSize({width:1440,height:1000});
+  });
+  await check('clarification choices and notes survive dismissal; explicit discard leaves saved decisions untouched',async()=>{
+    const before=JSON.stringify(await stored(page));await page.locator('[data-resolve]').click();
+    await page.locator('[name="fold"][value="later"]').check();await page.locator('#resolution-note').fill('Unfinished synthetic confirmation');await close(page);
+    await page.locator('#keep-editing').click();assert.equal(await page.locator('[name="fold"][value="later"]').isChecked(),true);
+    assert.equal(await page.locator('#resolution-note').inputValue(),'Unfinished synthetic confirmation');
+    await page.locator('#resolution-zone').fill('UTC');await close(page);await page.locator('#keep-editing').click();
+    assert.equal(await page.locator('#resolution-zone').inputValue(),'UTC');assert.equal(await page.locator('.choice-fieldset').isDisabled(),true);
+    await close(page);await page.locator('#discard-edits').click();assert.equal(JSON.stringify(await stored(page)),before);
+  });
+  await check('canceling source removal retains dirty protection against the actual saved source',async()=>{
+    const before=JSON.stringify(await stored(page));await page.locator('[data-edit]').click();await page.locator('#source-quote').fill('Still unsaved after canceled removal');
+    await page.locator('[data-delete]').click();await page.locator('#confirm-cancel').click();
+    assert.equal(await page.locator('#source-quote').inputValue(),'Still unsaved after canceled removal');await close(page);
+    assert.equal(await page.locator('#discard-edits').isVisible(),true);await page.locator('#discard-edits').click();assert.equal(JSON.stringify(await stored(page)),before);
   });
   await check('gap remains unresolved without a fabricated shifted instant',async()=>{
     await loadExample(page,'gap');assert.equal(await page.locator('.planning-card').count(),0);assert.match(await page.locator('.source-issues').textContent(),/never occurs|jump/i);assert.equal(await exportButton(page).isDisabled(),true);
