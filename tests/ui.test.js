@@ -210,6 +210,16 @@ try {
     await page.locator('#source-date').fill('');assert.equal(await page.locator('#source-date').evaluate(e=>e.validity.badInput),false);
     await page.keyboard.press('Escape');assert.equal(await page.locator('dialog[open]').count(),0,'Fully cleared empty form closes without false warning');
   });
+  await check('partial native input is not serialized away by opening removal confirmation',async()=>{
+    const before=JSON.stringify(await stored(page));
+    for(const selector of ['#source-date','#source-time']) {
+      await page.locator('[data-edit]').click();const input=page.locator(selector);await input.fill('');await input.focus();await page.keyboard.press('1');
+      assert.equal(await input.evaluate(e=>e.validity.badInput),true);await page.locator('[data-delete]').click();
+      assert.equal(await page.locator('#reset-dialog').count(),0);assert.match(await page.locator('#source-error').textContent(),/Finish or clear/);
+      assert.equal(await input.evaluate(e=>e.validity.badInput && e===document.activeElement),true);
+      assert.equal(JSON.stringify(await stored(page)),before);await page.keyboard.press('Escape');await page.locator('#discard-edits').click();
+    }
+  });
   await check('four consecutive Escapes preserve dirty source and clarification drafts and focus',async()=>{
     for(const [opener,field] of [['[data-edit]','#source-quote'],['[data-resolve]','#resolution-note']]) {
       const before=JSON.stringify(await stored(page));await page.locator(opener).click();await page.locator(field).fill('Four-Escape regression draft');
