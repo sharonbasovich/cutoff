@@ -188,7 +188,9 @@ function protectDialogDraft(dialog, form, savedValues = null) {
   };
   dismissHandlers.set(dialog, () => {
     if (prompt) return keep();
-    if (snapshot() === baseline) return dialog.close();
+    // Native date/time segments can contain edits while their submitted value is empty.
+    const incompleteNativeInput = [...form.querySelectorAll('input[type="date"], input[type="time"]')].some(input => input.validity.badInput);
+    if (!incompleteNativeInput && snapshot() === baseline) return dialog.close();
     form.hidden = true; form.inert = true;
     prompt = document.createElement('section');
     prompt.className = 'draft-discard-prompt';
@@ -355,7 +357,14 @@ document.addEventListener('click', event => {
   if (target.dataset.resolve) return clarificationDialog(target.dataset.resolve);
   if (target.dataset.delete) {
     const id = target.dataset.delete;
-    const draftValues = Object.fromEntries(new FormData(dialogs.querySelector('#source-form')));
+    const form = dialogs.querySelector('#source-form');
+    const incomplete = [...form.querySelectorAll('input[type="date"], input[type="time"]')].find(input => input.validity.badInput);
+    if (incomplete) {
+      form.querySelector('#source-error').textContent = 'Finish or clear the partially entered date or time before opening removal confirmation. Your edits are still here.';
+      incomplete.focus();
+      return;
+    }
+    const draftValues = Object.fromEntries(new FormData(form));
     closeDialog();
     return confirmDialog({ title: 'Remove this source?', description: 'The source statement and its clarification will be removed from this browser’s case. This cannot be undone.', actionLabel: 'Remove source', destructive: true, onCancel: () => sourceDialog(id, draftValues), action: () => { state.case.sources = state.case.sources.filter(s => s.id !== id); update('Source removed. Comparison updated.'); } });
   }
