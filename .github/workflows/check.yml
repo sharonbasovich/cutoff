@@ -68,6 +68,8 @@ jobs:
             evidence/axe-modal.json
             evidence/axe-mobile.json
             evidence/timeline-*.png
+            evidence/draft-guard-*.png
+            evidence/axe-draft-guard*.json
             evidence/ui-results.json
             evidence/ui-failure.txt
             evidence/export-example.ics

@@ -343,11 +343,11 @@ test('interface: dialog boundary recalculates enabled visible tabbables after ch
   assert.equal(h.doc.activeElement, newer);
 });
 
-test('interface: dialog key handling preserves Escape, browser shortcuts and handled events', () => {
+test('interface: dialog key handling preserves browser shortcuts and handled events', () => {
   const h = dialogEventHarness();
   const first = h.makeControl('close'), last = h.makeControl('submit');
   const dialog = h.open([first, last]);
-  for (const options of [{ key: 'Escape' }, { key: 'Enter' }, { ctrlKey: true }, { altKey: true }, { metaKey: true }]) {
+  for (const options of [{ key: 'Escape', ctrlKey: true }, { key: 'Escape', altKey: true }, { key: 'Enter' }, { ctrlKey: true }, { altKey: true }, { metaKey: true }]) {
     assert.equal(h.press(dialog, last, options).defaultPrevented, false);
     assert.equal(h.doc.activeElement, last);
   }
@@ -355,6 +355,18 @@ test('interface: dialog key handling preserves Escape, browser shortcuts and han
   assert.equal(h.doc.activeElement, last);
   dialog.open = false;
   assert.equal(h.press(dialog, last).defaultPrevented, false);
+});
+
+test('interface: Escape uses guarded dismissal before native close and ignores closed dialogs', () => {
+  const h = dialogEventHarness();
+  const first = h.makeControl('close'), last = h.makeControl('submit');
+  const dialog = h.open([first, last]);
+  assert.equal(h.press(dialog, last, { key: 'Escape', defaultPrevented: true }).defaultPrevented, true);
+  assert.equal(dialog.open, true, 'Previously handled Escape is untouched');
+  assert.equal(h.press(dialog, last, { key: 'Escape' }).defaultPrevented, true);
+  assert.equal(dialog.open, false, 'An unguarded dialog still closes');
+  assert.equal(h.doc.activeElement, h.opener);
+  assert.equal(h.press(dialog, last, { key: 'Escape' }).defaultPrevented, false);
 });
 
 test('interface: dialog focus fallback and close restoration remain local to each dialog', () => {
