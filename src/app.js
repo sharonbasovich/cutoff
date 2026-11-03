@@ -188,7 +188,9 @@ function protectDialogDraft(dialog, form, savedValues = null) {
   };
   dismissHandlers.set(dialog, () => {
     if (prompt) return keep();
-    if (snapshot() === baseline) return dialog.close();
+    // Native date/time segments can contain edits while their submitted value is empty.
+    const incompleteNativeInput = [...form.querySelectorAll('input[type="date"], input[type="time"]')].some(input => input.validity.badInput);
+    if (!incompleteNativeInput && snapshot() === baseline) return dialog.close();
     form.hidden = true; form.inert = true;
     prompt = document.createElement('section');
     prompt.className = 'draft-discard-prompt';

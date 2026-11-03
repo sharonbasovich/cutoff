@@ -192,6 +192,37 @@ try {
     assert.equal(await page.locator('#source-quote').inputValue(),'Still unsaved after canceled removal');await close(page);
     assert.equal(await page.locator('#discard-edits').isVisible(),true);await page.locator('#discard-edits').click();assert.equal(JSON.stringify(await stored(page)),before);
   });
+  await check('partial native date and time survive every dismissal without another changed field',async()=>{
+    const before=JSON.stringify(await stored(page));
+    for(const selector of ['#source-date','#source-time']) for(const action of ['Escape','Cancel','Close','backdrop']) {
+      await page.locator('#add-source').click();const input=page.locator(selector);await input.focus();await page.keyboard.press('1');
+      assert.deepEqual(await input.evaluate(e=>({value:e.value,badInput:e.validity.badInput})),{value:'',badInput:true},`${selector} must establish an incomplete native segment`);
+      if(action==='Escape') await page.keyboard.press('Escape');
+      else if(action==='Cancel') await page.locator('#source-form .dialog-footer [data-action="close"]').click();
+      else if(action==='Close') await page.locator('#source-form [aria-label="Close dialog"]').click();
+      else await page.mouse.click(1,1);
+      assert.equal(await page.locator('#keep-editing').isVisible(),true,`${selector}/${action}`);
+      await page.locator('#keep-editing').click();assert.equal(await input.evaluate(e=>e.validity.badInput),true);
+      assert.equal(await input.evaluate(e=>e===document.activeElement),true);assert.equal(JSON.stringify(await stored(page)),before);
+      await page.keyboard.press('Escape');await page.locator('#discard-edits').click();
+    }
+    await page.locator('#add-source').click();await page.locator('#source-date').focus();await page.keyboard.press('1');
+    await page.locator('#source-date').fill('');assert.equal(await page.locator('#source-date').evaluate(e=>e.validity.badInput),false);
+    await page.keyboard.press('Escape');assert.equal(await page.locator('dialog[open]').count(),0,'Fully cleared empty form closes without false warning');
+  });
+  await check('four consecutive Escapes preserve dirty source and clarification drafts and focus',async()=>{
+    for(const [opener,field] of [['[data-edit]','#source-quote'],['[data-resolve]','#resolution-note']]) {
+      const before=JSON.stringify(await stored(page));await page.locator(opener).click();await page.locator(field).fill('Four-Escape regression draft');
+      for(let i=0;i<4;i++) {
+        await page.keyboard.press('Escape');assert.equal(await page.locator('dialog[open]').count(),1);
+        assert.equal(await page.locator(field).inputValue(),'Four-Escape regression draft');
+        assert.equal(await page.evaluate(()=>!!document.activeElement.closest('dialog[open]')),true);
+        assert.equal(await page.locator(i%2===0?'#keep-editing':field).evaluate(e=>e===document.activeElement),true);
+        assert.equal(JSON.stringify(await stored(page)),before);
+      }
+      await page.keyboard.press('Escape');await page.locator('#discard-edits').click();
+    }
+  });
   await check('gap remains unresolved without a fabricated shifted instant',async()=>{
     await loadExample(page,'gap');assert.equal(await page.locator('.planning-card').count(),0);assert.match(await page.locator('.source-issues').textContent(),/never occurs|jump/i);assert.equal(await exportButton(page).isDisabled(),true);
   });
