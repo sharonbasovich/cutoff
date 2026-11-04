@@ -139,6 +139,39 @@ try {
     await draftPage.close();await page.reload();
   });
 
+  await check('partial buffer typing survives source saves; invalid drafts never apply pending settings', async()=>{
+    const draftContext = await browser.newContext();
+    const draftPage = await draftContext.newPage();await draftPage.goto(base);
+    const before = await draftPage.locator('.planning-card').textContent();
+    await draftPage.locator('#display-zone').fill('Asia/Tokyo');
+    const buffer = draftPage.locator('#buffer-minutes');
+    await buffer.focus();await draftPage.keyboard.press('ControlOrMeta+A');
+    await draftPage.keyboard.type('1e');
+    assert.equal(await buffer.inputValue(), '1e');
+    await draftPage.locator('[data-edit]').first().click();await draftPage.locator('#source-form button[type="submit"]').click();
+    const applied = (await stored(draftPage)).case;
+    assert.equal(applied.bufferMinutes, 60);assert.notEqual(applied.localZone, 'Asia/Tokyo');
+    assert.equal(await buffer.inputValue(), '1e');
+    for (const raw of ['1e', '-', '', ' ', '1e2', '0x10', '1.0', '0.5', '-1', '10081']) {
+      await buffer.fill(raw);await draftPage.locator('#settings-form button').click();
+      assert.match(await draftPage.locator('#settings-error').textContent(), /whole-number/);
+      assert.equal(await buffer.evaluate(element=>document.activeElement===element), true);
+      await draftPage.locator('[data-edit]').first().click();await draftPage.locator('#source-form button[type="submit"]').click();
+      assert.equal(await buffer.inputValue(), raw);
+      assert.equal(await draftPage.locator('#display-zone').inputValue(), 'Asia/Tokyo');
+      assert.equal(await draftPage.locator('.planning-card').textContent(), before);
+      assert.match(await draftPage.locator('#settings-draft-status').textContent(), /60-minute buffer/);
+      assert.equal((await stored(draftPage)).case.bufferMinutes, applied.bufferMinutes);
+      assert.equal((await stored(draftPage)).case.localZone, applied.localZone);
+    }
+    await buffer.fill('120');await draftPage.locator('#settings-form button').click();
+    assert.equal((await stored(draftPage)).case.bufferMinutes, 120);
+    assert.equal((await stored(draftPage)).case.localZone, 'Asia/Tokyo');
+    assert.equal(await draftPage.locator('#settings-draft-status').textContent(), '');
+    assert.notEqual(await draftPage.locator('.planning-card').textContent(), before);
+    await draftContext.close();
+  });
+
   await check('fold is unresolved until explicit occurrence and explanation; raw fields preserved',async()=>{
     await loadExample(page,'fold');assert.equal(await page.locator('.planning-card').count(),0);assert.equal(await exportButton(page).isDisabled(),true);
     const quote=await page.locator('blockquote').textContent();await page.locator('[data-resolve]').click();

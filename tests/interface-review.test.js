@@ -542,6 +542,41 @@ test('settings draft: failed validation retains draft; Apply commits and clears 
   assert.equal(JSON.parse(h.stored()).case.localZone, 'Asia/Tokyo');
   assert.equal(JSON.parse(h.stored()).case.bufferMinutes, 120);
 });
+test('settings draft: raw buffer text survives rerenders and rejects nondecimal or out-of-range Apply', () => {
+  const initial = stateFrom();
+  for (const raw of ['1e', '-', '', ' ', '1e2', '0x10', '1.0', '0.5', '-1', '10081', 'Infinity']) {
+    const h = harness({ stored: JSON.stringify(initial) });
+    const form = pendingSettings(h, 'Asia/Tokyo', raw);
+    const error = { textContent: '' };let focused = false;
+    form.id = 'settings-form';form.querySelector = () => error;
+    form.elements.bufferMinutes.focus = () => { focused = true; };
+    for (const listener of h.listeners.submit) listener({ target: form, preventDefault() {} });
+    assert.match(error.textContent, /whole-number/, JSON.stringify(raw));
+    assert.equal(focused, true);
+    assert.equal(h.writes.length, 0);
+    h.evaluate('update("Source updated")');
+    const html = h.nodes.get('#app').innerHTML;
+    assert.match(html, /id="buffer-minutes"[^>]*type="text" inputmode="numeric"/);
+    assert.ok(html.includes(`pattern="[0-9]+" value="${raw}"`));
+    assert.equal(h.evaluate('settingsDraft.bufferMinutes'), raw);
+    assert.equal(h.evaluate('settingsDraft.localZone'), 'Asia/Tokyo');
+    assert.equal(h.evaluate('getAnalysis().bufferMinutes'), initial.case.bufferMinutes);
+    assert.equal(JSON.parse(h.stored()).case.localZone, initial.case.localZone);
+    assert.equal(JSON.parse(h.stored()).case.bufferMinutes, initial.case.bufferMinutes);
+  }
+});
+test('settings draft: decimal buffer boundaries apply only on explicit submission', () => {
+  for (const raw of ['0', '1', '120', '10080']) {
+    const initial = stateFrom();const h = harness({ stored: JSON.stringify(initial) });
+    const form = pendingSettings(h, 'Asia/Tokyo', raw);form.id = 'settings-form';
+    h.evaluate('update("Source updated")');
+    assert.equal(h.evaluate('getAnalysis().bufferMinutes'), initial.case.bufferMinutes);
+    for (const listener of h.listeners.submit) listener({ target: form, preventDefault() {} });
+    assert.equal(h.evaluate('settingsDraft'), null);
+    assert.equal(JSON.parse(h.stored()).case.localZone, 'Asia/Tokyo');
+    assert.equal(JSON.parse(h.stored()).case.bufferMinutes, Number(raw));
+  }
+});
 test('settings draft: returning both fields to applied values clears status', () => {
   const initial = stateFrom();const h = harness({ stored: JSON.stringify(initial) });
   pendingSettings(h);
