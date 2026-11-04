@@ -1,6 +1,7 @@
-Cutoff draft protection release 2026-11-03
-PR8 and PR9; main1bbb89858420e500a71d453e9a10e4348816373a.
-Reviewed head27f56ed11d092d8792df5f106d2851f9e3fa2f16; CI41574404471 SUCCESS101Node/28browsergroups.
-Exact tested-dist artifact13202692178 ZIP SHA256cd12b78357edd16f26f6a3afd0d01de49922a99a76166008dfc3f82c363b4e30.
-Materialization41574734567 verified all8 blobs. Independent actual Chrome review and320px screenshot inspection complete.
+Cutoff buffer draft release 2026-11-04
+PR10; main ca2b05e34935259c1a38d231d7748d5718a38b5f.
+Reviewed head 2c6962a10db507e34b924bd5654545772af253b8; CI41757441703 passed103 Node tests/29 Chromium groups.
+Exact tested-dist artifact13288413672 ZIP SHA256 f25b4e70194b7e08e7f34503801c5bbfbea3a96bfb0f7d3c5426f65cf0336646.
+Materialization41757713838 verified all8 immutable blobs.
+Preserves incomplete planning buffer drafts across source edits; invalid settings never apply.
 No submission or video changes.
