@@ -1,7 +1,8 @@
-Cutoff buffer draft release 2026-11-04
-PR10; main ca2b05e34935259c1a38d231d7748d5718a38b5f.
-Reviewed head 2c6962a10db507e34b924bd5654545772af253b8; CI41757441703 passed103 Node tests/29 Chromium groups.
-Exact tested-dist artifact13288413672 ZIP SHA256 f25b4e70194b7e08e7f34503801c5bbfbea3a96bfb0f7d3c5426f65cf0336646.
-Materialization41757713838 verified all8 immutable blobs.
-Preserves incomplete planning buffer drafts across source edits; invalid settings never apply.
-No submission or video changes.
+Cutoff clarification access
+Source main: 841347f4c2a9666c5fcd3b08d6bfe80e13de1393
+Reviewed tested candidate: 7e74914dc34d65331734c7e8dffa8fb0008f6031
+Identical source tree: 153c5782d29a1f6cab1575d75fc04d2b4e7aa506
+Successful candidate check: 41876755714
+Successful main check: 41880882371
+Tested static artifact: 13348340593
+Artifact SHA256: c8bb5045826af347784fba9e49fcbb4251bf7fd64fbbab3efe13c20443abb10f
