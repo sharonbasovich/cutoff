@@ -99,6 +99,67 @@ try {
     await page.screenshot({path:'evidence/desktop-conflict.png',fullPage:true});
   });
   await check('desktop automated accessibility',()=>axe(page,'desktop'));
+  await check('resolved conflicting sources can be clarified without rewriting evidence', async()=>{
+    const clarificationContext = await browser.newContext({ acceptDownloads: true });
+    const p = await clarificationContext.newPage();
+    p.on('pageerror', e=>consoleErrors.push(e.message));
+    try {
+      await p.goto(base);
+      assert.equal(await p.locator('[data-resolve]').count(), 2, 'Default conflict offers both clarification actions');
+      assert.equal(await exportButton(p).isDisabled(), true);
+      const originalSources = [
+        { id: 'utc-notice', label: 'UTC notice', quote: 'Closes October 30, 2026 at 17:00 UTC.', date: '2026-10-30', time: '17:00', zone: 'UTC', weekday: '', url: 'https://example.com/notice', resolution: {} },
+        { id: 'ny-portal', label: 'New York portal', quote: 'Closes October 30, 2026 at 17:00 New York time.', date: '2026-10-30', time: '17:00', zone: 'America/New_York', weekday: '', url: 'https://example.com/portal', resolution: {} },
+      ];
+      const initial = { version: 1, exampleId: null, modified: true, case: { title: 'Synthetic zone correction', localZone: 'UTC', bufferMinutes: 60, sources: originalSources } };
+      await p.evaluate(value=>localStorage.setItem('cutoff.workspace.v1', JSON.stringify(value)), initial);
+      await p.reload();
+      assert.equal(await p.locator('.source-resolved').count(), 2);
+      assert.equal(await exportButton(p).isDisabled(), true);
+      const open = ()=>p.locator('[data-resolve="utc-notice"]').click();
+      const save = ()=>p.locator('#resolution-form button[type="submit"]').click();
+      const note = 'Synthetic organizer confirmation: the notice intended New York time.';
+      for (const dismissal of ['Cancel', 'Escape']) {
+        await open();await p.locator('#resolution-zone').fill('America/New_York');await p.locator('#resolution-note').fill(note);
+        if (dismissal === 'Cancel') await p.locator('#resolution-form .dialog-footer [data-action="close"]').click();
+        else await p.keyboard.press('Escape');
+        assert.equal(await p.locator('#keep-editing').isVisible(), true);
+        await p.locator('#keep-editing').click();
+        assert.equal(await p.locator('#resolution-zone').inputValue(), 'America/New_York');
+        assert.equal(await p.locator('#resolution-note').inputValue(), note);
+        assert.deepEqual(await stored(p), initial);
+        await p.keyboard.press('Escape');await p.locator('#discard-edits').click();
+        assert.deepEqual(await stored(p), initial);
+        assert.equal(await exportButton(p).isDisabled(), true);
+      }
+      await open();await p.locator('#resolution-zone').fill('America/New_York');await save();
+      assert.match(await p.locator('#resolution-error').textContent(), /Add a note/);
+      assert.deepEqual(await stored(p), initial);
+      await p.locator('#resolution-note').fill(note);await save();
+      const clarified = await stored(p);
+      assert.deepEqual(clarified.case.sources[0], { ...originalSources[0], resolution: { zone: 'America/New_York', note } });
+      assert.deepEqual(clarified.case.sources[1], originalSources[1]);
+      assert.equal(await exportButton(p).isEnabled(), true);
+      assert.match(await p.locator('.source-card').first().textContent(), /original source zone remains UTC/);
+      await p.reload();assert.deepEqual(await stored(p), clarified);
+      assert.equal(await exportButton(p).isEnabled(), true);
+      assert.equal(await p.locator('[data-resolve]').count(), 2, 'Agreement still allows clarification review and new clarification');
+      await p.locator('#backup-button').click();
+      const pending = p.waitForEvent('download');await p.locator('#download-backup').click();const download = await pending;
+      const backupText = await readFile(await download.path(), 'utf8');
+      assert.deepEqual(JSON.parse(backupText).workspace, clarified);
+      await p.keyboard.press('Escape');
+      await open();await p.locator('#resolution-zone').fill('');await p.locator('#resolution-note').fill('');await save();
+      assert.deepEqual((await stored(p)).case.sources, originalSources);
+      assert.equal(await exportButton(p).isDisabled(), true);
+      await p.reload();assert.equal(await exportButton(p).isDisabled(), true);
+      await p.locator('#backup-button').click();await p.locator('#backup-json').fill(backupText);await p.locator('#review-backup').click();
+      assert.match(await p.locator('#backup-preview').textContent(), /Entered instants agree/);
+      await p.locator('#confirm-restore').click();
+      assert.deepEqual(await stored(p), clarified);
+      assert.equal(await exportButton(p).isEnabled(), true);
+    } finally { await clarificationContext.close(); }
+  });
   await check('unapplied settings survive source saves and validation; only Apply changes the comparison', async()=>{
     const draftPage = await context.newPage();await draftPage.goto(base);
     const before = await draftPage.locator('.planning-card').textContent();

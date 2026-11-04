@@ -38,6 +38,20 @@ function harness({ stored = null, readBlocked = false, writeBlocked = false } = 
   vm.runInContext(source, sandbox, { filename: 'src/app.js' });
   return { sandbox, writes, listeners, nodes, evaluate: text => vm.runInContext(text, sandbox), stored: () => stored, externalWrite: value => { stored = value; } };
 }
+test('interface: resolved sources expose clarification without changing evidence or export gates', () => {
+  for (const id of ['disagreement', 'agreement']) {
+    const initial = stateFrom(id);
+    const h = harness({ stored: JSON.stringify(initial) });
+    assert.equal(h.evaluate('analysis.results.every(result => result.status === "resolved")'), true);
+    const html = h.nodes.get('#app').innerHTML;
+    for (const source of initial.case.sources) {
+      assert.ok(html.includes(`data-resolve="${source.id}"`), `${id}/${source.id} must offer clarification`);
+    }
+    assert.equal(h.evaluate('analysis.canExport'), id === 'agreement');
+    assert.equal(h.writes.length, 0);
+    assert.deepEqual(JSON.parse(h.stored()), initial);
+  }
+});
 test('interface: render escapes source text and limits links to HTTP(S)', () => {
   const data = stateFrom();
   const payload = '<img src=x onerror="globalThis.pwned=1"> & <script>bad()</script>';
