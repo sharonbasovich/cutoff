@@ -144,7 +144,10 @@ function warnBeforeExit(event) {
   event.returnValue = '';
 }
 function syncExitWarning() {
-  const needed = hasUnsavedWork();
+  // Native date/time segments can change badInput without firing input/change.
+  // Probe while they are focused; warnBeforeExit still checks actual unsaved work.
+  const nativeFieldFocused = document.activeElement?.matches?.('input[type="date"], input[type="time"]');
+  const needed = hasUnsavedWork() || !!nativeFieldFocused;
   if (needed === exitWarningAttached) return;
   exitWarningAttached = needed;
   // Avoid retaining a beforeunload listener when there is no work to lose.
@@ -448,5 +451,5 @@ document.addEventListener('submit', event => {
   state.case.localZone = zone; state.case.bufferMinutes = buffer; update('Display zone and planning buffer updated.', 'display-zone');
 });
 // Run after the existing handlers so successful saves/discards clear the warning.
-for (const type of ['input', 'change', 'click', 'submit']) document.addEventListener(type, syncExitWarning);
+for (const type of ['input', 'change', 'click', 'submit', 'focusin', 'focusout']) document.addEventListener(type, syncExitWarning);
 render();

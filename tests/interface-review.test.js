@@ -751,3 +751,18 @@ test('exit warning: untouched imported titles match native rendered baseline', (
     assert.equal(h.windowListeners.has('beforeunload'), false);
   }
 });
+
+test('exit warning: focused native segments are probed even without an input event', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  const dialog = {};h.nodes.set('dialog[open]', dialog);h.sandbox.nativeDialog = dialog;
+  h.evaluate('globalThis.nativeIncomplete = false; dialogDraftChecks.set(nativeDialog, () => nativeIncomplete)');
+  h.sandbox.document.activeElement = { matches: selector => selector.includes('input[type="date"]') };
+  for (const listener of h.listeners.focusin) listener({});
+  assert.equal(h.windowListeners.has('beforeunload'), true);
+  assert.equal(exitRequest(h).prevented, false, 'Focusing an untouched control does not warn');
+  h.evaluate('nativeIncomplete = true');
+  assert.equal(exitRequest(h).prevented, true, 'Partial native edit is detected without an input event');
+  h.evaluate('nativeIncomplete = false');h.sandbox.document.activeElement = null;
+  for (const listener of h.listeners.focusout) listener({});
+  assert.equal(h.windowListeners.has('beforeunload'), false);
+});
