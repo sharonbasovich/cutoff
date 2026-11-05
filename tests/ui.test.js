@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { assertResolvedFoldCalendarExport } from './calendar-export-assertions.js';
+import { acceptReload, verifyExitWarnings } from './exit-warning-browser.js';
 
 const port=Number(process.env.TEST_PORT||4387),base=`http://127.0.0.1:${port}`;
 const server=spawn(process.execPath,['scripts/serve.mjs'],{env:{...process.env,PORT:String(port)},stdio:['ignore','pipe','pipe']});
@@ -187,7 +188,7 @@ try {
     await draftPage.locator('#buffer-minutes').fill('180');
     await draftPage.locator('[data-example="gap"]').click();await draftPage.locator('#confirm-cancel').click();
     assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '180');
-    await draftPage.reload();assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '120');
+    await acceptReload(draftPage);assert.equal(await draftPage.locator('#buffer-minutes').inputValue(), '120');
     await draftPage.locator('#buffer-minutes').fill('180');
     await draftPage.locator('[data-example="gap"]').click();await draftPage.locator('#confirm-action').click();
     assert.equal(await draftPage.locator('#settings-draft-status').textContent(), '');
@@ -403,7 +404,7 @@ try {
       await b.locator('#workspace-title').fill('Stale after reset');await b.locator('#display-zone').focus();
       assert.match(await b.locator('.storage-warning').textContent(),/changed outside this tab/);
       assert.equal((await stored(b)).case.title,'New empty case');
-      await b.reload();assert.equal(await b.locator('#workspace-title').inputValue(),'New empty case');assert.equal(await b.locator('.storage-warning').count(),0);
+      await acceptReload(b);assert.equal(await b.locator('#workspace-title').inputValue(),'New empty case');assert.equal(await b.locator('.storage-warning').count(),0);
     } finally { await tabs.close(); }
   });
   await check('portable backup review, cancellation, unresolved recovery, Undo and draft preservation',async()=>{
@@ -461,6 +462,7 @@ try {
     await page.screenshot({path:'evidence/timeline-midnight-320.png',fullPage:true});
     await page.emulateMedia({media:'print'});assert.equal(await page.locator('.timeline-date').count(),2);await page.emulateMedia({media:'screen'});
   });
+  await check('unsaved-work exit warnings preserve drafts and clear after save or discard', ()=>verifyExitWarnings(browser,base,consoleErrors));
   await check('no unhandled browser exceptions or outbound app requests',async()=>{assert.deepEqual(consoleErrors,[]);assert.deepEqual(remoteRequests,[]);});
   await writeFile('evidence/ui-results.json',JSON.stringify({testedAt:new Date().toISOString(),browser:await browser.version(),viewportWidths:[1440,390,320],results,consoleErrors,remoteRequests,focusTrace},null,2));
   console.log(`\n${results.length} browser checks passed.`);
