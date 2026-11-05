@@ -1,4 +1,4 @@
-name: Verify released clarification access
+name: Verify released unsaved-exit warning
 on:
   push:
     branches: [verify/backup-live-20261102]
@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: 841347f4c2a9666c5fcd3b08d6bfe80e13de1393
+          ref: bc134bdf76c1d80f71b49f9f06302ac26e8a02fc
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -19,20 +19,25 @@ jobs:
           package-manager-cache: false
       - run: npm ci --no-audit --no-fund
       - run: ./node_modules/.bin/playwright install --with-deps chromium
-      - name: Verify exact public assets and clarification access
+      - name: Verify exact public assets and unsaved-exit warning
         run: |
           node --input-type=module <<'JS'
           import {chromium} from 'playwright';
           import assert from 'node:assert/strict';
           import {createHash} from 'node:crypto';
+          import {mkdir} from 'node:fs/promises';
+          import {verifyExitWarnings} from './tests/exit-warning-browser.js';
           const base='https://sharonbasovich.github.io/cutoff/';
-          const hashes={"LICENSE.txt":"cbde67c81f263d4f7513b588b2076a54064d8591970e11e31427cafb134130f7","THIRD_PARTY_NOTICES.txt":"be5d244efce7de0c6fb9fdefd306bb84e91f573bdccc6bf479e795a494982097","app.css":"0ae70c072407d7af1b2544b0a16fc6e1b718dc5b7469d6c50cfc1c25626786e8","app.css.map":"cc7e672796c07e2ccd6f948f75dd3228767821e9c281ecd10fdc8394369db3d5","app.js":"f1749d200f4ec79338251fb39c3fdcfb976fc9788530f88aad5e2cec07d7cda2","app.js.map":"d0b725a7761caaff510c326c2730c9138fce658f89aed2092aaa2002790accec","favicon.svg":"c0916576e317abfb728dc4eb6a12d74b96e7822995b09fe9b2c77d713bbdc05f","index.html":"b6fff09623b65fe07972d00baedceaedcaba45cef3fbd3d8c3723558de5ddce6"};
+          const hashes={"LICENSE.txt":"cbde67c81f263d4f7513b588b2076a54064d8591970e11e31427cafb134130f7","THIRD_PARTY_NOTICES.txt":"be5d244efce7de0c6fb9fdefd306bb84e91f573bdccc6bf479e795a494982097","app.css":"0ae70c072407d7af1b2544b0a16fc6e1b718dc5b7469d6c50cfc1c25626786e8","app.css.map":"cc7e672796c07e2ccd6f948f75dd3228767821e9c281ecd10fdc8394369db3d5","app.js":"94cfed23fcbb5d7beb30ed90f5c39150ddd467217afa9c27448f00528ee2161a","app.js.map":"b08b651ac33c93226f9d562bf0cef23ec7fdb123bf891eb4e7f771ebdabf71cb","favicon.svg":"c0916576e317abfb728dc4eb6a12d74b96e7822995b09fe9b2c77d713bbdc05f","index.html":"b6fff09623b65fe07972d00baedceaedcaba45cef3fbd3d8c3723558de5ddce6"};
           for(const [path,hash] of Object.entries(hashes)){
             const r=await fetch(base+path);assert.equal(r.ok,true,path);
             assert.equal(createHash('sha256').update(Buffer.from(await r.arrayBuffer())).digest('hex'),hash,path);
           }
           const browser=await chromium.launch();
           try {
+            await mkdir('evidence',{recursive:true});
+            const exitErrors=[];await verifyExitWarnings(browser,base,exitErrors);assert.deepEqual(exitErrors,[]);
+            console.log('PASS: public unsaved-exit warning checks at 1440px and 390px');
             const page=await browser.newPage({viewport:{width:390,height:844}});
             const errors=[];page.on('pageerror',e=>errors.push(e.message));
             await page.goto(base);
