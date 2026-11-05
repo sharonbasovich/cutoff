@@ -15,12 +15,14 @@ export async function acceptReload(page) {
   await navigation;
 }
 async function declineReload(page) {
+  const marker = await page.evaluate(() => (globalThis.__exitTestDocument = crypto.randomUUID()));
   const pending = page.waitForEvent('dialog');
-  const navigation = page.reload().then(() => 'loaded', error => error.message);
+  const navigation = page.reload({ timeout: 1000 }).then(() => 'loaded', error => error.message);
   const dialog = await pending;
   assert.equal(dialog.type(), 'beforeunload');
   await dialog.dismiss();
-  assert.match(await navigation, /ERR_ABORTED/, 'Keeping the page cancels the reload');
+  await navigation; // Chromium may leave the cancelled navigation waiting until timeout.
+  assert.equal(await page.evaluate(() => globalThis.__exitTestDocument), marker, 'Keeping the page retains the same document');
 }
 export async function verifyExitWarnings(browser, base, consoleErrors) {
   for (const width of [1440, 390]) {
@@ -36,6 +38,7 @@ export async function verifyExitWarnings(browser, base, consoleErrors) {
       assert.equal(await warned(page), true);
       await declineReload(page);
       assert.equal(await page.locator('#source-label').inputValue(), 'Unsaved synthetic evidence');
+      await page.screenshot({ path: `evidence/exit-warning-${width}.png`, fullPage: true });
       await page.locator('#source-form button[type="submit"]').click();
       assert.equal(await warned(page), true, 'Invalid submission retains protection');
       await page.keyboard.press('Escape');
@@ -102,7 +105,6 @@ export async function verifyExitWarnings(browser, base, consoleErrors) {
       assert.equal(await warned(page), true, 'Cancelled reset preserves pending settings');
       await page.locator('[data-action="reset"]').click();await page.locator('#confirm-action').click();
       assert.equal(await warned(page), false, 'Accepted reset clears warning');
-      await page.screenshot({ path: `evidence/exit-warning-${width}.png`, fullPage: true });
     } finally { await context.close(); }
   }
   const context = await browser.newContext();
