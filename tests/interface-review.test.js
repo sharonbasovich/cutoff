@@ -273,7 +273,7 @@ test('interface: planning separator alone is decorative and inherits readable te
     const html = h.evaluate('renderPlanning()');
     const zone = html.match(/<div class="planning-zone">([^]*?)<\/div>/)?.[1];
     const parts = ui.dateParts(model.analyzeCase(data.case).planningInstant, data.case.localZone);
-    assert.equal(zone, `${parts.weekday} <span aria-hidden="true">·</span> ${data.case.localZone}`);
+    assert.equal(zone, `${parts.weekday} <span aria-hidden="true">·</span> ${data.case.localZone} (UTC${parts.offset})`);
   }
 });
 
@@ -765,4 +765,37 @@ test('exit warning: focused native segments are probed even without an input eve
   h.evaluate('nativeIncomplete = false');h.sandbox.document.activeElement = null;
   for (const listener of h.listeners.focusout) listener({});
   assert.equal(h.windowListeners.has('beforeunload'), false);
+});
+
+test('interface: repeated display clocks keep each instant’s UTC offset visible', () => {
+  for (const [zone, date, times, offsets, buffer] of [
+    ['America/New_York', '2026-11-01', ['05:30', '06:30'], ['-04:00', '-05:00'], 60],
+    ['Australia/Lord_Howe', '2026-04-04', ['14:45', '15:15'], ['+11:00', '+10:30'], 30],
+  ]) {
+    const data = stateFrom();
+    data.case.localZone = zone; data.case.bufferMinutes = buffer;
+    data.case.sources = times.map((time, i) => ({ id: `fold-${i}`, label: `Synthetic ${i}`, quote: 'Synthetic UTC deadline', date, time, zone: 'UTC' }));
+    const h = harness({ stored: JSON.stringify(data) });
+    const timeline = h.evaluate('renderTimeline()');
+    for (const offset of offsets) assert.ok(timeline.includes(`UTC${offset}`), `${zone}: missing display offset ${offset}`);
+    assert.equal(h.evaluate('analysis.canExport'), false);
+    data.case.sources = [data.case.sources[1]];
+    const single = harness({ stored: JSON.stringify(data) });
+    assert.ok(single.evaluate('renderPlanning()').includes(`UTC${offsets[0]}`));
+    assert.ok(single.evaluate('renderSource(state.case.sources[0], analysis.results[0], 0)').includes(`${zone} (UTC${offsets[1]})`));
+    assert.equal(single.evaluate('analysis.canExport'), true);
+    assert.deepEqual(JSON.parse(single.stored()), data);
+  }
+});
+
+test('interface: display offsets retain fixed, historical-second and date-crossing precision', () => {
+  for (const [instant, zone, day, offset] of [
+    ['2027-01-01T00:30:00Z', '-05:00', 'Dec 31, 2026', '-05:00'],
+    ['2026-12-31T23:30:00Z', '+05:30', 'Jan 1, 2027', '+05:30'],
+    ['2026-11-01T06:30:00Z', 'UTC', 'Nov 1, 2026', '+00:00'],
+    ['1900-01-01T00:00:00Z', 'Europe/Paris', 'Jan 1, 1900', '+00:09:21'],
+  ]) {
+    const parts = ui.dateParts(instant, zone);
+    assert.equal(parts.day, day); assert.equal(parts.offset, offset);
+  }
 });

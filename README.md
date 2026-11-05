@@ -2,7 +2,7 @@
 
 Compare deadline statements without silently guessing a time zone.
 
-Cutoff is a local-first browser workbench. Enter each source's exact wording and structured date, time and zone, then compare the resulting instants. It detects missing zones, clock-change gaps and folds, weekday contradictions, and conflicting deadlines. Original source statements remain separate from explicit clarifications.
+Cutoff is a local-first browser workbench. Enter each source's exact wording and structured date, time and zone, then compare the resulting instants. It detects missing zones, clock-change gaps and folds, weekday contradictions, and conflicting deadlines. Original source statements remain separate from explicit clarifications. Local planning targets, timeline entries and converted source times show their UTC offsets so repeated clock times remain distinguishable across clock changes.
 
 A conservative planning target appears only when every source has an exact interpretation. Calendar export unlocks only when all source instants agree. The exported marker is a tentative, transparent, one-minute personal planning target with no automatic alarm. It is not an official deadline.
 

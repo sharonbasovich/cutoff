@@ -52,6 +52,7 @@ export function dateParts(instant, zone) {
       day: `${months[zoned.month - 1]} ${zoned.day}, ${zoned.year}`,
       time: precise ? zoned.toPlainTime().toString() : `${pad(zoned.hour)}:${pad(zoned.minute)}`,
       weekday: weekdays[zoned.dayOfWeek - 1],
+      offset: zoned.offset,
     };
   } catch { return { day: 'Check display zone', time: '—', weekday: '' }; }
 }
