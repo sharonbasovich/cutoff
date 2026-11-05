@@ -19,6 +19,8 @@ let analysis;
 // Unapplied settings stay in this tab until Apply or an intentional case change.
 let settingsDraft = null;
 let restoreUndo = null;
+let exitWarningAttached = false;
+const dialogDraftChecks = new WeakMap();
 
 const paths = {
   arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
@@ -125,6 +127,31 @@ function render() {
       </div>
     </main>
     <footer><span class="footer-brand">cutoff.</span><span>A little less uncertainty. A little more time.</span><span>No account. No tracking. On your device.</span></footer>${zoneOptions()}`;
+  syncExitWarning();
+}
+function hasUnsavedWork() {
+  const title = document.querySelector('#workspace-title');
+  const dialog = document.querySelector('dialog[open]');
+  // The native text input removes newlines from a valid imported title.
+  const renderedTitle = title?.defaultValue.replace(/[\r\n]/g, '');
+  return !!(settingsDraft || (!saved && state.modified)
+    || (title && title.value !== renderedTitle && title.value.trim() !== state.case.title)
+    || (dialog && dialogDraftChecks.get(dialog)?.()));
+}
+function warnBeforeExit(event) {
+  if (!hasUnsavedWork()) return;
+  event.preventDefault();
+  event.returnValue = '';
+}
+function syncExitWarning() {
+  // Native date/time segments can change badInput without firing input/change.
+  // Probe while they are focused; warnBeforeExit still checks actual unsaved work.
+  const nativeFieldFocused = document.activeElement?.matches?.('input[type="date"], input[type="time"]');
+  const needed = hasUnsavedWork() || !!nativeFieldFocused;
+  if (needed === exitWarningAttached) return;
+  exitWarningAttached = needed;
+  // Avoid retaining a beforeunload listener when there is no work to lose.
+  window[needed ? 'addEventListener' : 'removeEventListener']('beforeunload', warnBeforeExit);
 }
 function settingsDraftMessage() {
   return `Changes not applied. Comparison still uses ${state.case.localZone} and a ${state.case.bufferMinutes}-minute buffer. Apply settings to use these changes.`;
@@ -178,6 +205,9 @@ function requestDialogClose(dialog = dialogs.querySelector('dialog')) {
 function protectDialogDraft(dialog, form, savedValues = null) {
   const snapshot = () => JSON.stringify([...new FormData(form)]);
   const baseline = savedValues ? JSON.stringify([...new FormData(form)].map(([name, value]) => [name, savedValues[name] ?? ''])) : snapshot();
+  const changed = () => [...form.querySelectorAll('input[type="date"], input[type="time"]')].some(input => input.validity.badInput) || snapshot() !== baseline;
+  dialogDraftChecks.set(dialog, changed);
+  syncExitWarning();
   let prompt = null, field = form.querySelector('input, textarea, select');
   form.addEventListener('focusin', event => { if (event.target.matches('input, textarea, select')) field = event.target; });
   const keep = () => {
@@ -188,9 +218,8 @@ function protectDialogDraft(dialog, form, savedValues = null) {
   };
   dismissHandlers.set(dialog, () => {
     if (prompt) return keep();
-    // Native date/time segments can contain edits while their submitted value is empty.
-    const incompleteNativeInput = [...form.querySelectorAll('input[type="date"], input[type="time"]')].some(input => input.validity.badInput);
-    if (!incompleteNativeInput && snapshot() === baseline) return dialog.close();
+    // Native date/time segments may be edited while their submitted value is empty.
+    if (!changed()) return dialog.close();
     form.hidden = true; form.inert = true;
     prompt = document.createElement('section');
     prompt.className = 'draft-discard-prompt';
@@ -208,6 +237,7 @@ function openDialog(html, initialFocus) {
   dialog.addEventListener('close', () => {
     if (!dialogs.contains(dialog)) return;
     dialog.remove();
+    syncExitWarning();
     if (document.activeElement === document.body || document.activeElement === dialog) {
       if (previousFocus?.isConnected) previousFocus.focus();
       else document.querySelector('#add-source')?.focus();
@@ -300,9 +330,10 @@ function clarificationDialog(id) {
     closeDialog(); update('Clarification saved. Original source fields are unchanged.');
   });
 }
-function confirmDialog({ title, description, actionLabel, action, destructive = false, onCancel = null }) {
+function confirmDialog({ title, description, actionLabel, action, destructive = false, onCancel = null, unsavedDraft = false }) {
   let confirmed = false;
   const dialog = openDialog(`${dialogHeader('BEFORE YOU CONTINUE', escape(title), escape(description))}<div class="dialog-footer"><span></span><div><button class="button button-outline" data-action="close" id="confirm-cancel">Cancel</button><button class="button ${destructive ? 'button-danger' : 'button-dark'}" id="confirm-action">${escape(actionLabel)}</button></div></div>`, '#confirm-cancel');
+  if (unsavedDraft) { dialogDraftChecks.set(dialog, () => true); syncExitWarning(); }
   dialog.classList.add('dialog-compact'); dialog.setAttribute('aria-labelledby', 'dialog-title'); dialog.id = 'reset-dialog';
   dialog.addEventListener('close', () => { if (!confirmed && onCancel) onCancel(); });
   dialog.querySelector('#confirm-action').addEventListener('click', () => { confirmed = true; closeDialog(); action(); });
@@ -365,8 +396,9 @@ document.addEventListener('click', event => {
       return;
     }
     const draftValues = Object.fromEntries(new FormData(form));
+    const unsavedDraft = !!dialogDraftChecks.get(form.closest('dialog'))?.();
     closeDialog();
-    return confirmDialog({ title: 'Remove this source?', description: 'The source statement and its clarification will be removed from this browser’s case. This cannot be undone.', actionLabel: 'Remove source', destructive: true, onCancel: () => sourceDialog(id, draftValues), action: () => { state.case.sources = state.case.sources.filter(s => s.id !== id); update('Source removed. Comparison updated.'); } });
+    return confirmDialog({ title: 'Remove this source?', description: 'The source statement and its clarification will be removed from this browser’s case. This cannot be undone.', actionLabel: 'Remove source', destructive: true, unsavedDraft, onCancel: () => sourceDialog(id, draftValues), action: () => { state.case.sources = state.case.sources.filter(s => s.id !== id); update('Source removed. Comparison updated.'); } });
   }
   if (target.dataset.action === 'backup') return backupDialog();
   if (target.dataset.action === 'undo-restore' && restoreUndo) {
@@ -402,7 +434,7 @@ document.addEventListener('input', event => {
   document.querySelector('#settings-draft-status').textContent = settingsDraft ? settingsDraftMessage() : '';
 });
 document.addEventListener('change', event => {
-  if (event.target.id === 'workspace-title') { restoreUndo = null; document.querySelector('.backup-receipt')?.remove(); state.case.title = event.target.value.trim(); state.modified = true; persist(); if (storageError) render(); }
+  if (event.target.id === 'workspace-title') { restoreUndo = null; document.querySelector('.backup-receipt')?.remove(); state.case.title = event.target.value.trim(); state.modified = true; persist(); if (storageError) render(); else event.target.defaultValue = state.case.title; }
 });
 document.addEventListener('submit', event => {
   if (event.target.id !== 'settings-form') return;
@@ -418,7 +450,6 @@ document.addEventListener('submit', event => {
   settingsDraft = null;
   state.case.localZone = zone; state.case.bufferMinutes = buffer; update('Display zone and planning buffer updated.', 'display-zone');
 });
+// Run after the existing handlers so successful saves/discards clear the warning.
+for (const type of ['input', 'change', 'click', 'submit', 'focusin', 'focusout']) document.addEventListener(type, syncExitWarning);
 render();
-
-
-

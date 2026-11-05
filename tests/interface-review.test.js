@@ -18,7 +18,7 @@ const source = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8').r
 const clone = value => JSON.parse(JSON.stringify(value));
 const stateFrom = (id = 'agreement') => ({ version: 1, exampleId: id, modified: false, case: clone(examples.find(e => e.id === id).case) });
 function harness({ stored = null, readBlocked = false, writeBlocked = false } = {}) {
-  const writes = [], listeners = {}, nodes = new Map();
+  const writes = [], listeners = {}, windowListeners = new Map(), nodes = new Map();
   for (const key of ['#app', '#dialog-root', '#announcer']) nodes.set(key, { innerHTML: '', textContent: '' });
   const doc = {
     querySelector: selector => nodes.get(selector) || null,
@@ -28,6 +28,7 @@ function harness({ stored = null, readBlocked = false, writeBlocked = false } = 
   };
   const sandbox = vm.createContext({
     ...model, ...ui, ...backup, examples, document: doc, Intl, URL, Blob, console, setTimeout,
+    window: { addEventListener: (name, callback) => windowListeners.set(name, callback), removeEventListener: (name, callback) => { if (windowListeners.get(name) === callback) windowListeners.delete(name); } },
     crypto: { randomUUID: () => 'review-generated-id' },
     localStorage: {
       getItem: () => { if (readBlocked) throw new Error('Read blocked'); return stored; },
@@ -36,7 +37,7 @@ function harness({ stored = null, readBlocked = false, writeBlocked = false } = 
     FormData: class { constructor(form) { this.data = form.data; } *[Symbol.iterator]() { yield* Object.entries(this.data); } },
   });
   vm.runInContext(source, sandbox, { filename: 'src/app.js' });
-  return { sandbox, writes, listeners, nodes, evaluate: text => vm.runInContext(text, sandbox), stored: () => stored, externalWrite: value => { stored = value; } };
+  return { sandbox, writes, listeners, windowListeners, nodes, evaluate: text => vm.runInContext(text, sandbox), stored: () => stored, externalWrite: value => { stored = value; } };
 }
 test('interface: resolved sources expose clarification without changing evidence or export gates', () => {
   for (const id of ['disagreement', 'agreement']) {
@@ -671,4 +672,97 @@ test('backup: modified empty restored case requires confirmation before example 
   assert.ok(h.sandbox.pendingConfirm);
   assert.equal(h.evaluate('state.case.title'),'My empty recovery plan');assert.notEqual(h.evaluate('restoreUndo'),null);
   h.sandbox.pendingConfirm.action();assert.equal(h.evaluate('state.exampleId'),'gap');assert.equal(h.evaluate('restoreUndo'),null);
+});
+
+
+function exitRequest(h) {
+  const event = { prevented: false, returnValue: undefined, preventDefault() { this.prevented = true; } };
+  h.windowListeners.get('beforeunload')?.(event);
+  return event;
+}
+test('exit warning: untouched examples and successfully stored work never warn', () => {
+  for (const options of [{}, { stored: JSON.stringify(stateFrom()) }, { stored: '{broken' }, { readBlocked: true }]) {
+    const h = harness(options);
+    assert.equal(h.windowListeners.has('beforeunload'), false);
+    assert.equal(exitRequest(h).prevented, false);
+  }
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  h.evaluate('state.case.title = "Saved change"; update()');
+  assert.equal(h.windowListeners.has('beforeunload'), false);
+});
+test('exit warning: pending settings warn until reverted or successfully applied', () => {
+  const initial = stateFrom();const h = harness({ stored: JSON.stringify(initial) });
+  const form = pendingSettings(h, 'Asia/Tokyo', '1e');
+  assert.equal(h.windowListeners.has('beforeunload'), true);
+  let event = exitRequest(h);assert.equal(event.prevented, true);assert.equal(event.returnValue, '');
+  form.id = 'settings-form';
+  for (const listener of h.listeners.submit) listener({ target: form, preventDefault() {} });
+  assert.equal(exitRequest(h).prevented, true, 'Failed validation retains the warning');
+  pendingSettings(h, initial.case.localZone, String(initial.case.bufferMinutes));
+  assert.equal(h.windowListeners.has('beforeunload'), false, 'Reverting removes the listener');
+  const valid = pendingSettings(h);valid.id = 'settings-form';
+  for (const listener of h.listeners.submit) listener({ target: valid, preventDefault() {} });
+  assert.equal(h.windowListeners.has('beforeunload'), false, 'Applied settings are already stored');
+});
+test('exit warning: focused title edits warn before change, then save or revert clears', () => {
+  const initial = stateFrom(), h = harness({ stored: JSON.stringify(initial) });
+  const title = { id: 'workspace-title', value: 'Uncommitted title', defaultValue: initial.case.title };h.nodes.set('#workspace-title', title);
+  for (const listener of h.listeners.input) listener({ target: title });
+  assert.equal(exitRequest(h).prevented, true);
+  title.value = initial.case.title;
+  for (const listener of h.listeners.input) listener({ target: title });
+  assert.equal(h.windowListeners.has('beforeunload'), false);
+  title.value = 'Saved title';
+  for (const listener of h.listeners.change) listener({ target: title });
+  assert.equal(h.windowListeners.has('beforeunload'), false);
+  assert.equal(JSON.parse(h.stored()).case.title, 'Saved title');
+  assert.equal(title.defaultValue, 'Saved title');
+  title.value = initial.case.title;
+  for (const listener of h.listeners.input) listener({ target: title });
+  assert.equal(exitRequest(h).prevented, true, 'Editing back to the pre-save title is a new unsaved edit');
+});
+test('exit warning: failed and conflicted saves retain warning without overwriting newer data', () => {
+  for (const options of [{ writeBlocked: true }, { readBlocked: true }, { stored: '{broken' }]) {
+    const h = harness(options);h.evaluate('state.case.title = "In memory only"; update()');
+    assert.equal(exitRequest(h).prevented, true);
+    assert.equal(h.writes.length, 0);
+  }
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  const newer = JSON.stringify({ ...stateFrom(), modified: true });h.externalWrite(newer);
+  h.evaluate('state.case.title = "Local work"; update()');
+  assert.equal(exitRequest(h).prevented, true);assert.equal(h.stored(), newer);
+  h.evaluate('settingsDraft = null; state = initialState(); persist({ replaceExisting: true }); render()');
+  assert.equal(h.windowListeners.has('beforeunload'), false, 'Explicit reset restores normal saving');
+});
+
+test('exit warning: untouched imported titles match native rendered baseline', () => {
+  for (const value of ['  Padded title  ', 'Line\r\nbreak', 'Odd\0title']) {
+    const initial = stateFrom();initial.case.title = value;
+    const h = harness({ stored: JSON.stringify(initial) });
+    const defaultValue = value.replace(/\0/g, '\ufffd');
+    const title = { id: 'workspace-title', value: defaultValue.replace(/[\r\n]/g, ''), defaultValue };
+    h.nodes.set('#workspace-title', title);
+    for (const listener of h.listeners.input) listener({ target: title });
+    assert.equal(h.windowListeners.has('beforeunload'), false, JSON.stringify(value));
+    title.value = 'New title';
+    for (const listener of h.listeners.input) listener({ target: title });
+    assert.equal(exitRequest(h).prevented, true);
+    for (const listener of h.listeners.change) listener({ target: title });
+    assert.equal(h.windowListeners.has('beforeunload'), false);
+  }
+});
+
+test('exit warning: focused native segments are probed even without an input event', () => {
+  const h = harness({ stored: JSON.stringify(stateFrom()) });
+  const dialog = {};h.nodes.set('dialog[open]', dialog);h.sandbox.nativeDialog = dialog;
+  h.evaluate('globalThis.nativeIncomplete = false; dialogDraftChecks.set(nativeDialog, () => nativeIncomplete)');
+  h.sandbox.document.activeElement = { matches: selector => selector.includes('input[type="date"]') };
+  for (const listener of h.listeners.focusin) listener({});
+  assert.equal(h.windowListeners.has('beforeunload'), true);
+  assert.equal(exitRequest(h).prevented, false, 'Focusing an untouched control does not warn');
+  h.evaluate('nativeIncomplete = true');
+  assert.equal(exitRequest(h).prevented, true, 'Partial native edit is detected without an input event');
+  h.evaluate('nativeIncomplete = false');h.sandbox.document.activeElement = null;
+  for (const listener of h.listeners.focusout) listener({});
+  assert.equal(h.windowListeners.has('beforeunload'), false);
 });

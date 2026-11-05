@@ -69,6 +69,7 @@ jobs:
             evidence/axe-mobile.json
             evidence/timeline-*.png
             evidence/draft-guard-*.png
+            evidence/exit-warning-*.png
             evidence/axe-draft-guard*.json
             evidence/ui-results.json
             evidence/ui-failure.txt
