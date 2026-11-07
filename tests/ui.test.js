@@ -462,6 +462,45 @@ try {
     await page.screenshot({path:'evidence/timeline-midnight-320.png',fullPage:true});
     await page.emulateMedia({media:'print'});assert.equal(await page.locator('.timeline-date').count(),2);await page.emulateMedia({media:'screen'});
   });
+  await check('display offsets disambiguate repeated local clocks without changing source evidence',async()=>{
+    const isolated=await browser.newContext();
+    const p=await isolated.newPage();
+    p.on('pageerror',e=>consoleErrors.push(e.message));
+    try {
+      await p.goto(base);
+      for(const [zone,date,times,offsets,buffer,clock] of [
+        ['America/New_York','2026-11-01',['05:30','06:30'],['-04:00','-05:00'],60,'01:30'],
+        ['Australia/Lord_Howe','2026-04-04',['14:45','15:15'],['+11:00','+10:30'],30,'01:45'],
+      ]) {
+        const data={version:1,exampleId:null,modified:true,case:{title:'Synthetic repeated clock',localZone:zone,bufferMinutes:buffer,sources:times.map((time,i)=>({id:`fold-${i}`,label:`Synthetic UTC source ${i+1}`,quote:'Synthetic deadline',date,time,zone:'UTC'}))}};
+        await p.evaluate(value=>localStorage.setItem('cutoff.workspace.v1',JSON.stringify(value)),data);await p.reload();
+        assert.deepEqual((await p.locator('.timeline-legend strong').allTextContents()).slice(1),[clock,clock]);
+        assert.deepEqual((await p.locator('.timeline-offset').allTextContents()).slice(1),offsets.map(o=>`UTC${o}`));
+        assert.equal(await exportButton(p).isDisabled(),true);
+        data.case.sources=[data.case.sources[1]];
+        await p.evaluate(value=>localStorage.setItem('cutoff.workspace.v1',JSON.stringify(value)),data);await p.reload();
+        for(const width of [1440,390,320]) {
+          await p.setViewportSize({width,height:900});await noOverflow(p);
+          assert.deepEqual(await p.locator('.timeline-legend strong').allTextContents(),[clock,clock]);
+          assert.deepEqual(await p.locator('.timeline-offset').allTextContents(),offsets.map(o=>`UTC${o}`));
+          assert.ok((await p.locator('.planning-zone').textContent()).includes(`UTC${offsets[0]}`));
+          assert.ok((await p.locator('.source-facts>div:last-child small').textContent()).includes(`${zone} (UTC${offsets[1]})`));
+          for(const node of await p.locator('.timeline-offset').all()) assert.equal(await node.isVisible(),true);
+          assert.equal(await exportButton(p).isEnabled(),true);
+          await p.screenshot({path:`evidence/timeline-offsets-${zone.split('/')[1]}-${width}.png`,fullPage:true});
+        }
+        assert.deepEqual(await stored(p),data);
+        await p.emulateMedia({media:'print'});
+        assert.deepEqual(await p.locator('.timeline-offset').allTextContents(),offsets.map(o=>`UTC${o}`));
+        for(const node of await p.locator('.timeline-offset').all()) assert.equal(await node.isVisible(),true);
+        await p.screenshot({path:`evidence/timeline-offsets-print-${zone.split('/')[1]}.png`,fullPage:true});
+        await p.emulateMedia({media:'screen'});
+        await p.locator('#display-zone').fill('+05:30');await p.locator('#settings-form button').click();
+        assert.deepEqual(await p.locator('.timeline-offset').allTextContents(),['UTC+05:30','UTC+05:30']);
+        assert.deepEqual((await stored(p)).case.sources,data.case.sources);
+      }
+    } finally { await isolated.close(); }
+  });
   await check('unsaved-work exit warnings preserve drafts and clear after save or discard', ()=>verifyExitWarnings(browser,base,consoleErrors));
   await check('no unhandled browser exceptions or outbound app requests',async()=>{assert.deepEqual(consoleErrors,[]);assert.deepEqual(remoteRequests,[]);});
   await writeFile('evidence/ui-results.json',JSON.stringify({testedAt:new Date().toISOString(),browser:await browser.version(),viewportWidths:[1440,390,320],results,consoleErrors,remoteRequests,focusTrace},null,2));
